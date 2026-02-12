@@ -1,0 +1,304 @@
+好，这个时机问 Git **非常对**。
+你这个项目的特点是：**周期固定（到 4/20）、阶段性明显、实验性质强**，所以 Git 的用法要**克制、可回滚、可解释**，而不是花里胡哨。
+
+下面这份我会按 **“你真的会用到的”** 来写，不讲没用的骚操作。
+
+---
+
+# Git 简要使用说明（为你的 Unity + Offline 项目定制）
+
+> 目标：
+> **任何一天代码炸了，你都能回到“昨天还能跑”的状态。**
+
+---
+
+## 一、第一次建仓库（只做一次）
+
+### 1️⃣ 初始化仓库
+
+```bash
+git init
+```
+
+### 2️⃣ 建一个 `.gitignore`（非常重要）
+
+Unity 项目**不忽略就等死**。
+
+最小可用版（你可以直接复制）：
+
+```gitignore
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+Logs/
+UserSettings/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.csproj
+*.sln
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+```
+
+---
+
+### 3️⃣ 第一次提交（“干净起点”）
+
+```bash
+git add .
+git commit -m "init: project skeleton"
+```
+
+📌 **这个 commit 非常重要**
+它是你一切回滚的“创世点”。
+
+---
+
+## 二、你 90% 时间会用到的 6 个指令
+
+### ✅ 1. 查看当前状态
+
+```bash
+git status
+```
+
+你每天会用 **无数次**。
+
+看它的原则：
+
+* 红色：没进 Git
+* 绿色：准备提交
+
+---
+
+### ✅ 2. 加入暂存区
+
+```bash
+git add 文件名
+```
+
+或（最常用）：
+
+```bash
+git add .
+```
+
+👉 表示：
+**“我现在这一刻的状态，我愿意为它负责”**
+
+---
+
+### ✅ 3. 提交
+
+```bash
+git commit -m "描述你这一步干了什么"
+```
+
+❌ 不要写：
+
+```
+update
+fix
+test
+```
+
+✅ 好例子：
+
+```
+offline: add SH basis evaluation
+unity: stub WishGI shader input
+docs: outline data schema
+```
+
+---
+
+### ✅ 4. 看提交历史
+
+```bash
+git log --oneline
+```
+
+你会看到：
+
+```
+a3f92c1 offline: add SH basis evaluation
+e8129aa unity: stub WishGI shader input
+4a21d0c init: project skeleton
+```
+
+👉 **你能清楚知道哪一步出了问题**
+
+---
+
+### ✅ 5. 回到上一次提交（救命用）
+
+```bash
+git checkout .
+```
+
+👉 放弃**所有未提交修改**
+
+⚠️ 一旦用，改动直接消失
+👉 **只在你“这波写炸了”时用**
+
+---
+
+### ✅ 6. 回退到某个安全版本（时间回溯）
+
+```bash
+git checkout a3f92c1
+```
+
+你会进入：
+
+> “历史观测模式”
+
+想回到最新：
+
+```bash
+git checkout main
+```
+
+---
+
+## 三、这个项目「必须会」的中级指令
+
+### 🔹 1. 分支（阶段性实验必备）
+
+你会用它来：
+
+* 尝试一个算法
+* 改一个 Shader 思路
+* 不确定能不能成
+
+#### 创建并切换分支
+
+```bash
+git checkout -b probe-optimization
+```
+
+#### 切回主线
+
+```bash
+git checkout main
+```
+
+📌 原则：
+
+> **主分支永远能跑**
+
+---
+
+### 🔹 2. 合并分支（确认没炸）
+
+```bash
+git checkout main
+git merge probe-optimization
+```
+
+如果炸了：
+
+* Git 会提示冲突
+* 你可以手动改
+* 或直接放弃这次 merge
+
+---
+
+### 🔹 3. 临时保存现场（被打断时用）
+
+你会很需要这个。
+
+```bash
+git stash
+```
+
+👉 把当前改动“塞进抽屉”
+
+回来继续：
+
+```bash
+git stash pop
+```
+
+---
+
+## 四、**为你的 WishGI 项目定制的 Git 使用节奏**
+
+这是重点。
+
+### 🧠 我强烈建议你按“阶段提交”
+
+#### 每一个里程碑一个 commit：
+
+| 阶段        | 提交示例                                   |
+| --------- | -------------------------------------- |
+| 项目骨架      | `init: project skeleton`               |
+| 数据格式确定    | `docs: finalize probe data schema`     |
+| 离线 SH 跑通  | `offline: fit SH for single probe`     |
+| Unity 读数据 | `unity: load probe json`               |
+| Shader 接通 | `shader: inject baked GI via emission` |
+
+---
+
+### ❗一个黄金原则（请记住）
+
+> **代码能跑，立刻 commit**
+> 不要等“写完这一块”
+
+---
+
+## 五、你现在就可以照着做的「最小流程」
+
+这是你未来两个月最常用的循环：
+
+```bash
+git status
+git add .
+git commit -m "describe what works now"
+```
+
+一天可以 3～10 次，完全正常。
+
+---
+
+## 六、你暂时「不需要」的东西
+
+你现在可以安心忽略：
+
+* rebase
+* cherry-pick
+* submodule
+* tag
+* hook
+
+等你项目做完，我们再谈这些。
+
+---
+
+## 七、最后一句非常重要的话（工程经验）
+
+> Git 不是为了展示你多专业
+> **Git 是为了让你不害怕写代码**
+
+你这个项目**一定会写炸几次**，这是正常的。
+只要你 Git 用得好，**炸 ≠ 失败，只是一个分支而已**。
+
+---
+
+如果你愿意，下一步我可以直接帮你做一件非常实用的事：
+
+> **帮你设计一份「commit message 模板」**
+> 专门适合你这种“论文复现 + 工程实现”的项目。
+
+那东西用起来，真的会上瘾。
