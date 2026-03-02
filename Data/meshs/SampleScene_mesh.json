@@ -2,7 +2,7 @@
     "meshObjects": [
         {
             "name": "Cube",
-            "instanceId": -5894,
+            "instanceId": 27000,
             "localToWorld": [
                 1.0,
                 0.0,

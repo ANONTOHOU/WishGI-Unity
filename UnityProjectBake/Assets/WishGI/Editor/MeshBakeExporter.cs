@@ -1,11 +1,11 @@
-using System.Collections.Generic;
+ï»¿using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using WishGI.Baking;
 
-// ±ÜÃâÓë System.* Í¬ÃûÀàĞÍ³åÍ»
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ System.* Í¬ï¿½ï¿½ï¿½ï¿½ï¿½Í³ï¿½Í»
 using Debug = UnityEngine.Debug;
 using Application = UnityEngine.Application;
 using UEObject = UnityEngine.Object;
@@ -13,37 +13,47 @@ using UEObject = UnityEngine.Object;
 namespace WishGI.Baking.Editor
 {
     /// <summary>
-    /// ³¡¾°Íø¸ñ²É¼¯Óëµ¼³ö¹¤¾ß¡£
-    /// ²Ëµ¥Â·¾¶£ºTools/WishGI/Export Mesh Bake Data (JSON / SO)
+    /// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É¼ï¿½ï¿½ëµ¼ï¿½ï¿½ï¿½ï¿½ï¿½ß¡ï¿½
+    /// ï¿½Ëµï¿½Â·ï¿½ï¿½ï¿½ï¿½Tools/WishGI/Export Mesh Bake Data (JSON / SO)
     /// </summary>
     public static class MeshBakeExporter
     {
-        [MenuItem("Tools/WishGI/Export Mesh Bake Data/Export JSON...", priority = 0)]
+        [MenuItem("WishGI/Step 2: Export Mesh Bake Data/Export JSON", false, 12)]
         public static void ExportJson()
         {
             var data = CollectBakeData();
             if (data.meshObjects.Count == 0)
             {
-                EditorUtility.DisplayDialog("Mesh Bake Export", "Ã»ÓĞ¿ÉÓÃÍø¸ñ±»µ¼³ö¡£", "OK");
+                EditorUtility.DisplayDialog("Mesh Bake Export", "Ã»ï¿½Ğ¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ñ±»µï¿½ï¿½ï¿½ï¿½ï¿½", "OK");
                 return;
             }
 
-            string path = EditorUtility.SaveFilePanel("Save Mesh Bake JSON", Application.dataPath, "MeshBakeData", "json");
+            // é»˜è®¤ä¿å­˜åˆ°å·¥ä½œåŒºæ ¹ç›®å½•ä¸‹çš„ Data/meshs æ–‡ä»¶å¤¹
+            string defaultFolder = Path.GetFullPath(Path.Combine(Application.dataPath, "../../Data/meshs"));
+            if (!Directory.Exists(defaultFolder))
+            {
+                Directory.CreateDirectory(defaultFolder);
+            }
+
+            string sceneName = SceneManager.GetActiveScene().name;
+            if (string.IsNullOrEmpty(sceneName)) sceneName = "UntitledScene";
+
+            string path = EditorUtility.SaveFilePanel("Save Mesh Bake JSON", defaultFolder, sceneName + "_mesh.json", "json");
             if (string.IsNullOrEmpty(path)) return;
 
             var json = JsonUtility.ToJson(data, true);
             File.WriteAllText(path, json);
-            Debug.Log($"[MeshBakeExporter] JSON µ¼³öÍê³É: {path}");
-            EditorUtility.RevealInFinder(path);
+            Debug.Log($"[WishGI] æˆåŠŸå¯¼å‡º {data.meshObjects.Count} ä¸ªç½‘æ ¼çš„çƒ˜ç„™æ•°æ®è‡³: {path}");
+            AssetDatabase.Refresh();
         }
 
-        [MenuItem("Tools/WishGI/Export Mesh Bake Data/Export ScriptableObject...", priority = 1)]
+        [MenuItem("WishGI/Step 2: Export Mesh Bake Data/Export ScriptableObject", false, 13)]
         public static void ExportScriptableObject()
         {
             var data = CollectBakeData();
             if (data.meshObjects.Count == 0)
             {
-                EditorUtility.DisplayDialog("Mesh Bake Export", "Ã»ÓĞ¿ÉÓÃÍø¸ñ±»µ¼³ö¡£", "OK");
+                EditorUtility.DisplayDialog("Mesh Bake Export", "Ã»ï¿½Ğ¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ñ±»µï¿½ï¿½ï¿½ï¿½ï¿½", "OK");
                 return;
             }
 
@@ -56,15 +66,15 @@ namespace WishGI.Baking.Editor
             AssetDatabase.CreateAsset(asset, path);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log($"[MeshBakeExporter] ScriptableObject µ¼³öÍê³É: {path}");
+            Debug.Log($"[WishGI] ScriptableObject ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: {path}");
             Selection.activeObject = asset;
         }
 
         /// <summary>
-        /// ºËĞÄ²É¼¯Âß¼­£º
-        /// - ±éÀú³¡¾° MeshRenderer
-        /// - ¹ıÂËÎŞĞ§¶ÔÏó
-        /// - À­È¡ world-space ¶¥µã¡¢·¨Ïß¡¢UV2¡¢Ë÷Òı
+        /// ï¿½ï¿½ï¿½Ä²É¼ï¿½ï¿½ß¼ï¿½ï¿½ï¿½
+        /// - ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ MeshRenderer
+        /// - ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ§ï¿½ï¿½ï¿½ï¿½
+        /// - ï¿½ï¿½È¡ world-space ï¿½ï¿½ï¿½ã¡¢ï¿½ï¿½ï¿½ß¡ï¿½UV2ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         /// </summary>
         private static MeshBakeDataJson CollectBakeData()
         {
@@ -82,23 +92,23 @@ namespace WishGI.Baking.Editor
                 var mesh = mf.sharedMesh;
                 if (mesh == null) continue;
 
-                // ¹ıÂË²»²ÎÓë GI »ò LightProbeOnly µÄ¶ÔÏó
+                // ï¿½ï¿½ï¿½Ë²ï¿½ï¿½ï¿½ï¿½ï¿½ GI ï¿½ï¿½ LightProbeOnly ï¿½Ä¶ï¿½ï¿½ï¿½
                 bool contributesGI = GameObjectUtility.AreStaticEditorFlagsSet(go, StaticEditorFlags.ContributeGI);
-                bool lightProbeOnly = mr.receiveGI == ReceiveGI.LightProbes; // ÊÓÎª ¡°LightProbeOnly¡±
+                bool lightProbeOnly = mr.receiveGI == ReceiveGI.LightProbes; // ï¿½ï¿½Îª ï¿½ï¿½LightProbeOnlyï¿½ï¿½
                 if (!contributesGI || lightProbeOnly) continue;
 
-                // ¿É¶ÁĞÔ¼ì²é
+                // ï¿½É¶ï¿½ï¿½Ô¼ï¿½ï¿½
                 if (!mesh.isReadable)
                 {
-                    Debug.LogWarning($"[MeshBakeExporter] Mesh ²»¿É¶Á (ĞèÆôÓÃ Read/Write Enabled): {go.name}", go);
+                    Debug.LogWarning($"[WishGI] Mesh ï¿½ï¿½ï¿½É¶ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Read/Write Enabled): {go.name}", go);
                     continue;
                 }
 
-                // UV2 ¼ì²é
+                // UV2 ï¿½ï¿½ï¿½
                 var uv2 = mesh.uv2;
                 if (uv2 == null || uv2.Length == 0)
                 {
-                    Debug.LogWarning($"[MeshBakeExporter] È±ÉÙ UV2 (¹âÕÕ UV): {go.name}", go);
+                    Debug.LogWarning($"[WishGI] È±ï¿½ï¿½ UV2 (ï¿½ï¿½ï¿½ï¿½ UV): {go.name}", go);
                 }
 
                 var verts = mesh.vertices;
@@ -108,7 +118,7 @@ namespace WishGI.Baking.Editor
                 var positionsWS = new Vector3[verts.Length];
                 var normalsWS = new Vector3[norms.Length];
 
-                // ×ªÊÀ½ç¿Õ¼ä
+                // ×ªï¿½ï¿½ï¿½ï¿½Õ¼ï¿½
                 for (int i = 0; i < verts.Length; i++)
                     positionsWS[i] = go.transform.TransformPoint(verts[i]);
 
@@ -129,7 +139,7 @@ namespace WishGI.Baking.Editor
                 result.meshObjects.Add(item);
             }
 
-            Debug.Log($"[MeshBakeExporter] ÊÕ¼¯Íê³É£¬¹² {result.meshObjects.Count} ¸öÍø¸ñ¶ÔÏó¡£");
+            Debug.Log($"[WishGI] ï¿½Õ¼ï¿½ï¿½ï¿½É£ï¿½ï¿½ï¿½ {result.meshObjects.Count} ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½");
             return result;
         }
     }

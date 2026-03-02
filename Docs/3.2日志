@@ -1,0 +1,30 @@
+工作总结
+
+本次完成的环节：
+
+Unity 侧导出：光源/环境与网格导出菜单统一到 WishGI 菜单，默认输出到 Data 下（lights、meshs）。
+离线采样：实现蓝噪声（Poisson）表面采样；增加简易 BVH 光追；初版直射可见性/irradiance 输出；后续扩展为 Lambert 漫反射路径追踪（多弹射 + next-event estimation），输出 per-direction radiance。
+主要改动文件与用途：
+
+SceneLightExporter.cs：导出场景光源、环境、网格实例信息；菜单项 WishGI/Step 1。
+MeshBakeExporter.cs：导出网格烘焙数据 JSON/SO；菜单项 WishGI/Step 2；默认保存到 Data/meshs。
+UV2Generator.cs：批量生成 UV2；菜单项 WishGI/Step 0。
+sample_surface.py：离线采样与光追核心脚本，支持蓝噪声表面采样、直射可见性/irradiance、以及多弹射 Lambert 路径追踪输出 radiancePerDir。
+离线采样使用说明（当前推荐小规模测试参数）：
+
+示例（PowerShell 多行反引号）：
+
+python [sample_surface.py](http://_vscodecontentref_/4) `  --mesh-json [SampleScene_mesh.json](http://_vscodecontentref_/5) `  --scene-json [SampleScene_lights.json](http://_vscodecontentref_/6) `  --output [SampleScene_samples_pt.json](http://_vscodecontentref_/7) `  --min-dist 0.1 `  --num-samples 200 `  --directions 64 `  --bounces 3 `  --albedo 0.8
+输出字段：visibilityPerLight / irradiancePerLight 为直射遮挡与能量；radiancePerDir 为每方向的多弹射辐射度（无环境光时，出界即 0）。numSamples 可能小于目标值，因 Poisson 采样饱和。
+若想看到更明显的数值，可提高光源强度、减小 --min-dist、增大 --albedo 或添加环境项（尚未实现）。
+现存限制与后续可选改进：
+
+未实现 HDRI/环境光；miss 时返回 0，可加常量或贴图环境。
+材质目前假设灰度漫反射 albedo 常数；如需真实材质需扩展导出材质/贴图采样。
+性能为纯 Python+numpy，方向×样本大时会慢；可考虑 Embree/OptiX/Taichi 等加速或降低 directions/bounces 做验证。 - 输出字段：visibilityPerLight / irradiancePerLight 为直射遮挡与能量；radiancePerDir 为每方向的多弹射辐射度（无环境光时，出界即 0）。numSamples 可能小于目标值，因 Poisson 采样饱和。
+若想看到更明显的数值，可提高光源强度、减小 --min-dist、增大 --albedo 或添加环境项（尚未实现）。
+现存限制与后续可选改进：
+
+未实现 HDRI/环境光；miss 时返回 0，可加常量或贴图环境。
+材质目前假设灰度漫反射 albedo 常数；如需真实材质需扩展导出材质/贴图采样。
+性能为纯 Python+numpy，方向×样本大时会慢；可考虑 Embree/OptiX/Taichi 等加速或降低 directions/bounces 做验证。
