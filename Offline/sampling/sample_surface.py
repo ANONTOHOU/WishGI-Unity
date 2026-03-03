@@ -5,14 +5,16 @@ SceneLightExporter (lights) and MeshBakeExporter (mesh geometry).
 
 Usage (from repo root):
 	python Offline/sampling/sample_surface.py `
-  --mesh-json Data/meshs/SampleScene_mesh.json `
-  --scene-json Data/scenes/SampleScene_lights.json `
-  --output Data/samples/SampleScene_samples_pt.json `
-  --min-dist 0.1 `
-  --num-samples 200 `
-  --directions 64 `
-  --bounces 3 `
-  --albedo 0.8
+	--mesh-json Data/meshs/SampleScene_mesh.json `
+	--scene-json Data/scenes/SampleScene_lights.json `
+	--output Data/samples/SampleScene_samples_pt.json `
+	--min-dist 0.1 `
+	--num-samples 200 `
+	--directions 64 `
+	--bounces 3 `
+	--albedo 0.8 `
+	--seed 42 `
+	--dirs-out Data/samples/SampleScene_dirs.npy
 
 Outputs JSON with per-sample position/normal/triangle index/barycentric and a
 per-light visibility & irradiance estimate using a minimalist CPU ray tracer.
@@ -482,7 +484,10 @@ def direct_radiance(pos: np.ndarray, normal: np.ndarray, lights: List[Light], bv
 # ----------------------------- Pipeline -----------------------------
 
 
-def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: float, num_samples: int, num_dirs: int, max_bounces: int, albedo: float):
+def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: float, num_samples: int, num_dirs: int, max_bounces: int, albedo: float, seed: int, dirs_out: str | None):
+	# Fix seeds so sampling, directions, and path tracing are reproducible for SH fitting
+	random.seed(seed)
+	np.random.seed(seed)
 	print(f"[WishGI] Loading mesh from {mesh_json}")
 	tris = load_mesh_triangles(mesh_json)
 	print(f"[WishGI] Triangles: {len(tris)}")
@@ -498,8 +503,14 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 	pts = blue_noise_sample(tris, target_count=num_samples, min_dist=min_dist)
 	print(f"[WishGI] Accepted samples: {len(pts)}")
 
-	print(f"[WishGI] Generating cosine-weighted directions: {num_dirs}")
+	print(f"[WishGI] Generating cosine-weighted directions: {num_dirs} (seed={seed})")
 	dirs_local = cosine_hemisphere_samples(num_dirs)
+	if dirs_out:
+		dirs_dir = os.path.dirname(dirs_out)
+		if dirs_dir:
+			os.makedirs(dirs_dir, exist_ok=True)
+		print(f"[WishGI] Saving directions -> {dirs_out}")
+		np.save(dirs_out, dirs_local.astype(np.float32))
 
 	samples: List[Sample] = []
 	for p, tri, bary in pts:
@@ -523,6 +534,11 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 		"minDist": min_dist,
 		"numSamples": len(samples),
 		"numDirections": num_dirs,
+		"seed": seed,
+		"dirsLocal": [
+			{"x": float(d[0]), "y": float(d[1]), "z": float(d[2])}
+			for d in dirs_local
+		],
 		"samples": [
 			{
 				"position": {"x": float(s.position[0]), "y": float(s.position[1]), "z": float(s.position[2])},
@@ -554,6 +570,8 @@ def parse_args():
 	parser.add_argument("--directions", type=int, default=64, help="Number of cosine-weighted hemisphere directions (per-sample outputs)")
 	parser.add_argument("--bounces", type=int, default=3, help="Max path bounces for indirect lighting")
 	parser.add_argument("--albedo", type=float, default=0.8, help="Lambert albedo (0-1), gray")
+	parser.add_argument("--seed", type=int, default=42, help="Random seed for sampling, directions, and tracer")
+	parser.add_argument("--dirs-out", type=str, default=None, help="Optional .npy file to store the direction set for SH fitting")
 	return parser.parse_args()
 
 
@@ -568,6 +586,8 @@ def main():
 		num_dirs=args.directions,
 		max_bounces=args.bounces,
 		albedo=args.albedo,
+		seed=args.seed,
+		dirs_out=args.dirs_out,
 	)
 
 
