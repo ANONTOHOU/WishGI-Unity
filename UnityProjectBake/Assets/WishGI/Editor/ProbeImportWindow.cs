@@ -131,9 +131,9 @@ public class ProbeImportWindow : EditorWindow
             }
         }
         tex.SetPixels(colors);
-        tex.Apply(false, false);
         tex.wrapMode = TextureWrapMode.Clamp;
-        tex.filterMode = FilterMode.Bilinear;
+        tex.filterMode = FilterMode.Point; // avoid cross-probe blending
+        tex.Apply(false, false);
 
         string assetPath = textureAssetPath;
         if (string.IsNullOrEmpty(assetPath)) assetPath = "Assets/WishGI/Resources/ProbeMap.asset";
