@@ -213,8 +213,22 @@ public class ProbeImportWindow : EditorWindow
 
     private int InferProbeCountFromMeta()
     {
-        if (string.IsNullOrEmpty(probeMetaPath) || !File.Exists(probeMetaPath)) return -1;
-        var meta = JsonUtility.FromJson<ProbeMapMeta>(File.ReadAllText(probeMetaPath));
+        string path = probeMetaPath;
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            if (!string.IsNullOrEmpty(meshAssocPath))
+            {
+                path = Path.Combine(Path.GetDirectoryName(meshAssocPath), "probe_map_meta.json");
+            }
+        }
+        
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) 
+        {
+            Debug.LogError($"[WishGI] Cannot find probe_map_meta.json. Evaluated path: {path}");
+            return -1;
+        }
+
+        var meta = JsonUtility.FromJson<ProbeMapMeta>(File.ReadAllText(path));
         return meta != null ? meta.num_probes : -1;
     }
 

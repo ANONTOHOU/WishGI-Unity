@@ -1,12 +1,12 @@
 #ifndef WISHGI_EVAL_INCLUDED
 #define WISHGI_EVAL_INCLUDED
 
-// SH basis constants for L=2
+// SH basis constants for L=2 (pre-multiplied by cosine convolution A_l / pi for diffuse irradiance)
 static const float c0 = 0.28209479177387814;
-static const float c1 = 0.4886025119029199;
-static const float c2 = 1.0925484305920792;
-static const float c3 = 0.31539156525252005;
-static const float c4 = 0.5462742152960396;
+static const float c1 = 0.32573500793527993; // 0.4886025 * (2/3)
+static const float c2 = 0.2731371076480198;  // 1.0925484 * 0.25
+static const float c3 = 0.07884789131313001; // 0.3153915 * 0.25
+static const float c4 = 0.1365685538240099;  // 0.5462742 * 0.25
 
 // Evaluate L=2 Spherical Harmonics with given coefficients and direction
 float3 EvalSH_L2(float3 coeffs0[9], float3 coeffs1[9], float w0, float w1, float3 dir) {

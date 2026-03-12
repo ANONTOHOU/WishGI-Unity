@@ -134,27 +134,34 @@ def save_mesh_assoc(path: str, assoc_list: List[Dict[str, Any]], top_k_vertex: i
 # ----------------------------- Clustering (K-means) -----------------------------
 
 
-def kmeans(points: np.ndarray, k: int, iters: int = 20, seed: int = 42) -> np.ndarray:
-    """Simple K-means on Nx3 points. Returns centers shape (k,3)."""
+def kmedoids(points: np.ndarray, k: int, iters: int = 20, seed: int = 42) -> np.ndarray:
+    """K-Medoids on Nx3 points."""
     rng = np.random.default_rng(seed)
     n = points.shape[0]
-    # init: choose k random points
-    init_idx = rng.choice(n, size=k, replace=False)
-    centers = points[init_idx].copy()
-
+    medoid_idx = rng.choice(n, size=k, replace=False)
+    
     for _ in range(iters):
-        # assign
-        dists = np.linalg.norm(points[:, None, :] - centers[None, :, :], axis=2)  # (n,k)
+        dists = np.linalg.norm(points[:, None, :] - points[medoid_idx][None, :, :], axis=2)
         assign = np.argmin(dists, axis=1)
-        # update
+        new_medoids = medoid_idx.copy()
+        
         for j in range(k):
             mask = assign == j
             if not np.any(mask):
-                # reinit empty cluster
-                centers[j] = points[rng.integers(0, n)]
+                new_medoids[j] = rng.integers(0, n)
             else:
-                centers[j] = points[mask].mean(axis=0)
-    return centers
+                cluster_pts_idx = np.where(mask)[0]
+                cluster_pts = points[cluster_pts_idx]
+                intra_dists = np.linalg.norm(cluster_pts[:, None, :] - cluster_pts[None, :, :], axis=2)
+                cost = np.sum(intra_dists, axis=1)
+                best_idx_in_cluster = np.argmin(cost)
+                new_medoids[j] = cluster_pts_idx[best_idx_in_cluster]
+                
+        if np.array_equal(medoid_idx, new_medoids):
+            break
+        medoid_idx = new_medoids
+        
+    return points[medoid_idx].copy()
 
 
 def topk_inverse_distance(points: np.ndarray, centers: np.ndarray, top_k: int, eps: float = 1e-8):
@@ -213,8 +220,8 @@ def run_all(samples_path: str, mesh_path: str, probes_count: int, top_k_sample: 
     samples = load_samples(samples_path)
     points = np.stack([s.pos for s in samples], axis=0)
 
-    # 2) probe clustering (K-means)
-    centers = kmeans(points, probes_count, iters=30, seed=seed)
+    # 2) probe clustering (K-medoids)
+    centers = kmedoids(points, probes_count, iters=30, seed=seed)
     probes = [Probe(idx=i, pos=centers[i]) for i in range(probes_count)]
 
     # 3) W matrix for samples -> probes (top-K inverse distance, rows sum to 1)

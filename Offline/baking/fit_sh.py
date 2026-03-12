@@ -35,7 +35,7 @@ from sh_basis import eval_sh_basis, num_sh_coeffs
 class SampleRadiance:
 	sample_id: int
 	radiance: np.ndarray  # (num_dirs, 3)
-
+	normal: np.ndarray    # (3,)
 
 def load_samples(path: str) -> Tuple[List[SampleRadiance], np.ndarray | None, int]:
 	with open(path, "r", encoding="utf-8") as f:
@@ -57,7 +57,17 @@ def load_samples(path: str) -> Tuple[List[SampleRadiance], np.ndarray | None, in
 		if rad_np.ndim != 2 or rad_np.shape[1] != 3:
 			raise ValueError(f"Sample {i} radiance shape invalid: {rad_np.shape}")
 		sample_id = int(s.get("sample_id", i))
-		out.append(SampleRadiance(sample_id=sample_id, radiance=rad_np))
+		norm_np = np.array([0., 1., 0.], dtype=np.float64)
+		if "normal" in s:
+			nd = s["normal"]
+			if isinstance(nd, dict):
+				norm_np = np.array([float(nd.get("x", 0)), float(nd.get("y", 1)), float(nd.get("z", 0))], dtype=np.float64)
+			else:
+				norm_np = np.asarray(nd, dtype=np.float64)
+			n_len = np.linalg.norm(norm_np)
+			if n_len > 1e-6:
+				norm_np /= n_len
+		out.append(SampleRadiance(sample_id=sample_id, radiance=rad_np, normal=norm_np))
 	return out, dirs_from_file, num_dirs
 
 
@@ -104,12 +114,19 @@ def build_system(samples: List[SampleRadiance], weights: Dict[int, List[Tuple[in
 			raise ValueError(f"No weights found for sample_id={s.sample_id}")
 		if s.radiance.shape[0] != num_dirs:
 			raise ValueError(f"Sample {s.sample_id} radiance dirs {s.radiance.shape[0]} != expected {num_dirs}")
+		
+		w_d_array = np.maximum(0.0, dirs @ s.normal)
+		
 		for j in range(num_dirs):
-			Y = basis[j]
+			w_d = w_d_array[j]
+			if w_d <= 0.0:
+				continue
+			sqrt_wd = np.sqrt(w_d)
+			Y = sqrt_wd * basis[j]
 			for pid, w in probe_weights:
 				base = pid * C
 				A[row, base : base + C] = w * Y
-			b[row] = s.radiance[j]
+			b[row] = sqrt_wd * s.radiance[j]
 			row += 1
 	A = A[:row]
 	b = b[:row]

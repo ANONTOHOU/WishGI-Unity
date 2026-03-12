@@ -26,12 +26,12 @@
 
 ## 流程概览
 
-1. 采样：从网格表面采样点并计算每方向辐亮度。
-2. Probe 分布：K-means 生成 probe，并得到 sample/vertex 到 probe 的 top-k 权重。
-3. SH 拟合：用带正则的最小二乘求每个 probe 的 SH 系数。
+1. 采样：从网格表面采样点并计算每方向辐亮度。记录法线以供余弦权重计算。
+2. Probe 分布：K-Medoids 生成 probe 以确保探针落在表面，并得到 sample/vertex 到 probe 的 top-k 权重。
+3. SH 拟合：结合方向法线权重余弦衰减，使用带正则的最小二乘求每个 probe 的 SH 系数。
 4. 打包：将系数写入 1D RGBAFloat 布局的 ProbeMap（`.npy`）。
 5. Unity 导入：生成 Texture2D、写入 mesh uv2。
-6. 运行时：Shader 解码 probe 系数并计算最终 GI 发光项。
+6. 运行时：Shader 解码 probe 系数并应用漫反射积分（Diffuse Convolution）计算最终 GI 发光项。
 
 ## 快速开始
 
@@ -40,45 +40,25 @@
 ### 1) 采样
 
 ```powershell
-python Offline/sampling/sample_surface.py `
-	--mesh-json Data/meshs/SampleScene_mesh.json `
-	--scene-json Data/scenes/SampleScene_lights.json `
-	--output Data/samples/SampleScene_samples_pt.json `
-	--min-dist 0.1 --num-samples 200 --directions 64 `
-	--bounces 3 --albedo 0.8 --seed 42 `
-	--dirs-out Data/samples/SampleScene_dirs.npy
+python Offline/sampling/sample_surface.py --mesh-json Data/meshs/SampleScene_mesh.json --scene-json Data/scenes/SampleScene_lights.json --output Data/samples/SampleScene_samples_pt.json --min-dist 0.1 --num-samples 200 --directions 64 --bounces 3 --albedo 0.8 --seed 42 --dirs-out Data/samples/SampleScene_dirs.npy
 ```
 
 ### 2) 导出 Probe 与权重
 
 ```powershell
-python Offline/export/export_probes.py `
-	--samples-json Data/samples/SampleScene_samples_pt.json `
-	--mesh-json Data/meshs/SampleScene_mesh.json `
-	--probes 16 --top-k-sample 4 --top-k-vertex 2 `
-	--output-dir Data/probes
+python Offline/export/export_probes.py --samples-json Data/samples/SampleScene_samples_pt.json --mesh-json Data/meshs/SampleScene_mesh.json --probes 16 --top-k-sample 4 --top-k-vertex 2 --output-dir Data/probes
 ```
 
 ### 3) SH 拟合
 
 ```powershell
-python Offline/baking/fit_sh.py `
-	--samples-json Data/samples/SampleScene_samples_pt.json `
-	--sample-weights Data/probes/sample_weights.json `
-	--order 2 --lambda-reg 1e-4 `
-	--output-npy Data/probes/probes_sh.npy `
-	--output-json Data/probes/probes_sh.json `
-	--dirs-npy Data/samples/SampleScene_dirs.npy
+python Offline/baking/fit_sh.py --samples-json Data/samples/SampleScene_samples_pt.json --sample-weights Data/probes/sample_weights.json --order 2 --lambda-reg 1e-4 --output-npy Data/probes/probes_sh.npy --output-json Data/probes/probes_sh.json --dirs-npy Data/samples/SampleScene_dirs.npy
 ```
 
 ### 4) 打包 ProbeMap
 
 ```powershell
-python Offline/baking/pack_probes.py `
-	--probes-npy Data/probes/probes_sh.npy `
-	--order 2 `
-	--output-tex Data/probes/probe_map.npy `
-	--output-meta Data/probes/probe_map_meta.json
+python Offline/baking/pack_probes.py --probes-npy Data/probes/probes_sh.npy --order 2 --output-tex Data/probes/probe_map.npy --output-meta Data/probes/probe_map_meta.json
 ```
 
 ## Unity 使用说明（URP）
