@@ -75,7 +75,9 @@ def load_sample_weights(path: str) -> Tuple[Dict[int, List[Tuple[int, float]]], 
 	with open(path, "r", encoding="utf-8") as f:
 		data = json.load(f)
 	weights_map: Dict[int, List[Tuple[int, float]]] = {}
-	num_probes = int(data.get("num_probes"))
+	num_probes = int(data.get("num_probes", 0))
+	if num_probes <= 0:
+		raise ValueError("sample_weights.json missing valid num_probes")
 	top_k = int(data.get("top_k_sample", 0))
 	for row in data.get("weights", []):
 		sid = int(row.get("sample_id", row.get("id", -1)))
@@ -130,6 +132,8 @@ def build_system(samples: List[SampleRadiance], weights: Dict[int, List[Tuple[in
 			row += 1
 	A = A[:row]
 	b = b[:row]
+	if row == 0:
+		raise ValueError("All rows were filtered out by direction weights; check normals and direction set")
 	return A, b, C
 
 
@@ -160,7 +164,7 @@ def parse_args():
 	parser.add_argument("--samples-json", required=True, help="Path to samples JSON produced by sample_surface.py")
 	parser.add_argument("--sample-weights", required=True, help="Path to sample_weights.json from export_probes.py")
 	parser.add_argument("--order", type=int, default=2, help="SH order (only <=2 supported)")
-	parser.add_argument("--lambda-reg", type=float, default=1e-4, help="Ridge regularization weight")
+	parser.add_argument("--lambda-reg", type=float, default=0.1, help="Ridge regularization weight (paper-style default: 0.1)")
 	parser.add_argument("--output-npy", required=True, help="Output .npy for probe coeffs (shape: P x C x 3)")
 	parser.add_argument("--output-json", default=None, help="Optional JSON dump for inspection")
 	parser.add_argument("--dirs-npy", default=None, help="Optional .npy directions used during sampling (overrides dirsLocal)")

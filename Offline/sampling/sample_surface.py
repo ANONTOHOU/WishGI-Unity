@@ -526,7 +526,9 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 		s.radiance_dirs = radiance_per_dir
 		samples.append(s)
 
-	os.makedirs(os.path.dirname(output_path), exist_ok=True)
+	out_dir = os.path.dirname(output_path)
+	if out_dir:
+		os.makedirs(out_dir, exist_ok=True)
 	print(f"[WishGI] Writing samples -> {output_path}")
 	out_data = {
 		"mesh": os.path.basename(mesh_json),

@@ -138,6 +138,11 @@ def kmedoids(points: np.ndarray, k: int, iters: int = 20, seed: int = 42) -> np.
     """K-Medoids on Nx3 points."""
     rng = np.random.default_rng(seed)
     n = points.shape[0]
+    if n == 0:
+        raise ValueError("No sample points found; cannot distribute probes")
+    if k <= 0:
+        raise ValueError("Probe count must be > 0")
+    k = min(k, n)
     medoid_idx = rng.choice(n, size=k, replace=False)
     
     for _ in range(iters):
@@ -167,12 +172,18 @@ def kmedoids(points: np.ndarray, k: int, iters: int = 20, seed: int = 42) -> np.
 def topk_inverse_distance(points: np.ndarray, centers: np.ndarray, top_k: int, eps: float = 1e-8):
     """Return sparse weights list for JSON. Each row sums to 1 (top-K nearest with inverse-distance)."""
     n = points.shape[0]
+    k_centers = centers.shape[0]
+    if k_centers == 0:
+        raise ValueError("No probe centers available")
+    if top_k <= 0:
+        raise ValueError("top_k must be > 0")
+    top_k = min(top_k, k_centers)
     dists = np.linalg.norm(points[:, None, :] - centers[None, :, :], axis=2)  # (n,k)
 
     weights_out = []
     for i in range(n):
         row = dists[i]
-        top_idx = np.argpartition(row, top_k)[:top_k]
+        top_idx = np.argpartition(row, top_k - 1)[:top_k]
         top_idx = top_idx[np.argsort(row[top_idx])]
         inv = 1.0 / (row[top_idx] + eps)
         w = inv / np.sum(inv)
@@ -218,11 +229,14 @@ def compute_sample_weights(points: np.ndarray, centers: np.ndarray, top_k: int):
 def run_all(samples_path: str, mesh_path: str, probes_count: int, top_k_sample: int, top_k_vertex: int, output_dir: str, seed: int = 42):
     # 1) load samples
     samples = load_samples(samples_path)
+    if len(samples) == 0:
+        raise ValueError("samples-json does not contain any samples")
     points = np.stack([s.pos for s in samples], axis=0)
 
     # 2) probe clustering (K-medoids)
     centers = kmedoids(points, probes_count, iters=30, seed=seed)
-    probes = [Probe(idx=i, pos=centers[i]) for i in range(probes_count)]
+    actual_probes = centers.shape[0]
+    probes = [Probe(idx=i, pos=centers[i]) for i in range(actual_probes)]
 
     # 3) W matrix for samples -> probes (top-K inverse distance, rows sum to 1)
     weights_sparse = compute_sample_weights(points, centers, top_k=top_k_sample)
@@ -234,10 +248,10 @@ def run_all(samples_path: str, mesh_path: str, probes_count: int, top_k_sample: 
     # 5) save outputs
     os.makedirs(output_dir, exist_ok=True)
     save_probes(os.path.join(output_dir, "probes.json"), probes, space="world")
-    save_weights(os.path.join(output_dir, "sample_weights.json"), weights_sparse, num_samples=len(samples), num_probes=probes_count, top_k=top_k_sample)
-    save_mesh_assoc(os.path.join(output_dir, "mesh_assoc.json"), mesh_assoc, top_k_vertex=top_k_vertex)
+    save_weights(os.path.join(output_dir, "sample_weights.json"), weights_sparse, num_samples=len(samples), num_probes=actual_probes, top_k=min(top_k_sample, actual_probes))
+    save_mesh_assoc(os.path.join(output_dir, "mesh_assoc.json"), mesh_assoc, top_k_vertex=min(top_k_vertex, actual_probes))
 
-    print(f"[export_probes] Samples: {len(samples)}, Probes: {probes_count}, topK_sample={top_k_sample}, topK_vertex={top_k_vertex}")
+    print(f"[export_probes] Samples: {len(samples)}, Probes: {actual_probes}, topK_sample={min(top_k_sample, actual_probes)}, topK_vertex={min(top_k_vertex, actual_probes)}")
     print(f"[export_probes] Saved probes.json, sample_weights.json, mesh_assoc.json to {output_dir}")
 
 

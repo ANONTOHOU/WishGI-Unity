@@ -8,11 +8,11 @@
 #define WISHGI_PROBE_HLSL_INCLUDED
 
 // SH basis constants for L=2 (pre-multiplied by diffuse convolution)
-static const float c0 = 0.282095;
-static const float c1 = 0.325735;
-static const float c2 = 0.273137;
-static const float c3 = 0.078848;
-static const float c4 = 0.136569;
+static const float c0 = 0.28209479177387814;
+static const float c1 = 0.32573500793527993;
+static const float c2 = 0.2731371076480198;
+static const float c3 = 0.07884789131313001;
+static const float c4 = 0.1365685538240099;
 
 inline void EvalSH9_L2(float3 dir, out float basis[9])
 {

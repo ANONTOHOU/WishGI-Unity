@@ -1,8 +1,9 @@
 """
-Real SH basis evaluation up to order 2 (9 coefficients).
+Evaluate transfer SH basis T(Y) up to order 2 (9 coefficients).
 
-We only implement L<=2 because the pipeline and shader examples target that
-order. Extend with higher-order formulas if needed later.
+WishGI runtime reconstructs diffuse GI using transfer-convolved SH terms.
+To avoid train/runtime mismatch, offline fitting must use the same basis
+constants as shader evaluation.
 """
 
 from __future__ import annotations
@@ -40,12 +41,12 @@ def eval_sh_basis(dirs: np.ndarray, order: int) -> np.ndarray:
 	y = dirs[:, 1]
 	z = dirs[:, 2]
 
-	# constants from common real SH conventions (matches shader snippet)
-	c0 = 0.282095
-	c1 = 0.488603
-	c2 = 1.092548
-	c3 = 0.315392
-	c4 = 0.546274
+	# Diffuse transfer-convolved constants (must match WishGI_Eval.hlsl / WishGIProbe.hlsl)
+	c0 = 0.28209479177387814
+	c1 = 0.32573500793527993
+	c2 = 0.2731371076480198
+	c3 = 0.07884789131313001
+	c4 = 0.1365685538240099
 
 	vals = np.zeros((dirs.shape[0], C), dtype=np.float64)
 	idx = 0

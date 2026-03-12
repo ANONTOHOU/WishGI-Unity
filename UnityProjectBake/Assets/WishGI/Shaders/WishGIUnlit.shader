@@ -3,7 +3,7 @@ Shader "WishGI/UnlitProbe"
     Properties
     {
         _ProbeMap ("Probe Map", 2D) = "white" {}
-        _ProbeCount ("Probe Count", Float) = 16
+        _ProbeCount ("Probe Count", Float) = 128
         _TexelsPerProbe ("Texels Per Probe", Float) = 7
         _EmissionTint ("Emission Tint", Color) = (1,1,1,1)
     }

@@ -94,7 +94,9 @@ def main():
 
     tex, meta = pack_coeffs_to_texture(coeffs, order)
 
-    os.makedirs(os.path.dirname(args.output_tex), exist_ok=True)
+    out_dir = os.path.dirname(args.output_tex)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     np.save(args.output_tex, tex.astype(np.float32))
     if args.output_meta:
         with open(args.output_meta, "w", encoding="utf-8") as f:

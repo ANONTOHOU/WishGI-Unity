@@ -26,5 +26,10 @@ def solve_ridge(A: np.ndarray, b: np.ndarray, lambda_reg: float) -> np.ndarray:
 	if lambda_reg > 0:
 		ATA += lambda_reg * np.eye(ATA.shape[0], dtype=np.float64)
 	ATb = A.T @ b
-	return np.linalg.solve(ATA, ATb)
+	try:
+		return np.linalg.solve(ATA, ATb)
+	except np.linalg.LinAlgError:
+		# Fall back to least-squares on the regularized normal system for near-singular cases.
+		x, *_ = np.linalg.lstsq(ATA, ATb, rcond=None)
+		return x
 

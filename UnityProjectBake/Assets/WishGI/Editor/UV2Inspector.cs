@@ -11,7 +11,7 @@ using UnityEngine;
 public class UV2Inspector : EditorWindow
 {
     private Mesh mesh;
-    private int probeCount = 16;
+    private int probeCount = 128;
     private int sampleCount = 8;
 
     [MenuItem("WishGI/UV2 Inspector")]
