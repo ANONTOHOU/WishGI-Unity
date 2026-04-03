@@ -1,13 +1,13 @@
-// WishGI probe sampling helpers for URP
-// Functions:
-//   EvalSH9_L2(float3 dir) -> float3x3 basis (as float3[9])
-//   FetchProbeCoeffs(sampler2D tex, float texelsPerProbe, float probeCount, int probeIndex) -> float3 coeffs[9]
-//   SampleWishGI(...) -> float3 emissive color from uv2 weights and normal
+// URP 中用于 WishGI 探测器采样的辅助函数
+// 函数：
+//   EvalSH9_L2(float3 dir) -> 浮点数 3×3 基础矩阵（以 float3[9] 形式返回）
+//   FetchProbeCoeffs(sampler2D tex, float texelsPerProbe, float probeCount, int probeIndex) -> 浮点数 3×9 系数（以 float3[9] 形式返回）
+//   SampleWishGI(...) -> 根据 uv2 权重和法线返回浮点数 3×1 发射色
 
 #ifndef WISHGI_PROBE_HLSL_INCLUDED
 #define WISHGI_PROBE_HLSL_INCLUDED
 
-// SH basis constants for L=2 (pre-multiplied by diffuse convolution)
+// L=2 的 SH 基常量（已乘以漫反射卷积）
 static const float c0 = 0.28209479177387814;
 static const float c1 = 0.32573500793527993;
 static const float c2 = 0.2731371076480198;
@@ -35,12 +35,12 @@ inline void FetchProbeCoeffs(TEXTURE2D_PARAM(probeTex, samplerProbeTex), float t
     float baseX = probeIndex * texelsPerProbe;
     float3 tmp[9];
 
-    // zero init
+    // 初始化置零
     for (int k = 0; k < 9; k++) tmp[k] = 0;
 
-    // read 7 texels (texelsPerProbe expected 7 for L2)
+    // 读取7个纹理单元（texelsPerProbe预期为7用于L2）
     int f = 0;
-    // texelsPerProbe is small (<=7), explicit bounded loop without unroll/loop attributes
+    // texelsPerProbe较小（<=7），显式有界循环，无需unroll/loop属性
     for (int t = 0; t < 7; t++)
     {
         float2 uv = float2((baseX + t + 0.5) / width, 0.5);

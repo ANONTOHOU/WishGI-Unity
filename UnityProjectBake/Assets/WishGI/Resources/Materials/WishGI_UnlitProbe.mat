@@ -24,12 +24,12 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _ProbeMap:
-        m_Texture: {fileID: 2800000, guid: a54bc465c3ee03f44884b0b7598eba95, type: 2}
+        m_Texture: {fileID: 2800000, guid: c580ce23a0632c64aab526730298c6dd, type: 2}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _ProbeCount: 128
+    - _ProbeCount: 64
     - _TexelsPerProbe: 7
     m_Colors:
     - _EmissionTint: {r: 1, g: 1, b: 1, a: 1}

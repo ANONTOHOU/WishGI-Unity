@@ -5,7 +5,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using WishGI.Baking;
 
-// ������ System.* ͬ�����ͳ�ͻ
+// 消除 System.* 和 UnityEngine.Object 命名空间冲突
 using Debug = UnityEngine.Debug;
 using Application = UnityEngine.Application;
 using UEObject = UnityEngine.Object;
@@ -13,8 +13,7 @@ using UEObject = UnityEngine.Object;
 namespace WishGI.Baking.Editor
 {
     /// <summary>
-    /// ��������ɼ��뵼�����ߡ�
-    /// �˵�·����Tools/WishGI/Export Mesh Bake Data (JSON / SO)
+    /// Tools/WishGI/Export Mesh Bake Data (JSON / SO)
     /// </summary>
     public static class MeshBakeExporter
     {
@@ -24,7 +23,7 @@ namespace WishGI.Baking.Editor
             var data = CollectBakeData();
             if (data.meshObjects.Count == 0)
             {
-                EditorUtility.DisplayDialog("Mesh Bake Export", "û�п������񱻵�����", "OK");
+                EditorUtility.DisplayDialog("Mesh Bake Export", "没有找到符合渲染条件的模型物体", "OK");
                 return;
             }
 
@@ -53,7 +52,7 @@ namespace WishGI.Baking.Editor
             var data = CollectBakeData();
             if (data.meshObjects.Count == 0)
             {
-                EditorUtility.DisplayDialog("Mesh Bake Export", "û�п������񱻵�����", "OK");
+                EditorUtility.DisplayDialog("Mesh Bake Export", "没有找到符合渲染条件的模型物体", "OK");
                 return;
             }
 
@@ -66,15 +65,14 @@ namespace WishGI.Baking.Editor
             AssetDatabase.CreateAsset(asset, path);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log($"[WishGI] ScriptableObject �������: {path}");
+            Debug.Log($"[WishGI] ScriptableObject 导出成功: {path}");
             Selection.activeObject = asset;
         }
 
         /// <summary>
-        /// ���Ĳɼ��߼���
-        /// - �������� MeshRenderer
-        /// - ������Ч����
-        /// - ��ȡ world-space ���㡢���ߡ�UV2������
+        /// 收集需要参与烘焙的数据：
+        /// - 过滤有效的 MeshRenderer
+        /// - 获取世界空间顶点法线以及 UV2 信息
         /// </summary>
         private static MeshBakeDataJson CollectBakeData()
         {
@@ -92,23 +90,23 @@ namespace WishGI.Baking.Editor
                 var mesh = mf.sharedMesh;
                 if (mesh == null) continue;
 
-                // ���˲����� GI �� LightProbeOnly �Ķ���
+                // 判断是否贡献 GI 且接收模式不是仅探针
                 bool contributesGI = GameObjectUtility.AreStaticEditorFlagsSet(go, StaticEditorFlags.ContributeGI);
-                bool lightProbeOnly = mr.receiveGI == ReceiveGI.LightProbes; // ��Ϊ ��LightProbeOnly��
+                bool lightProbeOnly = mr.receiveGI == ReceiveGI.LightProbes; 
                 if (!contributesGI || lightProbeOnly) continue;
 
-                // �ɶ��Լ��
+                // 读写支持检测
                 if (!mesh.isReadable)
                 {
-                    Debug.LogWarning($"[WishGI] Mesh ���ɶ� (������ Read/Write Enabled): {go.name}", go);
+                    Debug.LogWarning($"[WishGI] Mesh 不可读 (需要在 Import Setting 勾选 Read/Write Enabled): {go.name}", go);
                     continue;
                 }
 
-                // UV2 ���
+                // 确保拥有 UV2 贴图
                 var uv2 = mesh.uv2;
                 if (uv2 == null || uv2.Length == 0)
                 {
-                    Debug.LogWarning($"[WishGI] ȱ�� UV2 (���� UV): {go.name}", go);
+                    Debug.LogWarning($"[WishGI] 缺少 UV2 (没有 Lightmap UV): {go.name}", go);
                 }
 
                 var verts = mesh.vertices;
@@ -118,7 +116,7 @@ namespace WishGI.Baking.Editor
                 var positionsWS = new Vector3[verts.Length];
                 var normalsWS = new Vector3[norms.Length];
 
-                // ת����ռ�
+                // 转换坐标系
                 for (int i = 0; i < verts.Length; i++)
                     positionsWS[i] = go.transform.TransformPoint(verts[i]);
 
@@ -139,7 +137,7 @@ namespace WishGI.Baking.Editor
                 result.meshObjects.Add(item);
             }
 
-            Debug.Log($"[WishGI] �ռ���ɣ��� {result.meshObjects.Count} ���������");
+            Debug.Log($"[WishGI] 收集完成，共有 {result.meshObjects.Count} 个有效进行光照烘焙的对象。");
             return result;
         }
     }

@@ -19,7 +19,6 @@ Shader "WishGI/UnlitProbe"
             #pragma multi_compile _ _SCREEN_SPACE_OCCLUSION
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-            // Local include (same folder)
             #include "WishGIProbe.hlsl"
 
             TEXTURE2D(_ProbeMap); SAMPLER(sampler_ProbeMap);

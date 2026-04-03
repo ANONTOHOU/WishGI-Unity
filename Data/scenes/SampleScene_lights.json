@@ -31,32 +31,6 @@
     },
     "lights": [
         {
-            "name": "Directional Light",
-            "type": "Directional",
-            "position": {
-                "x": 0.0,
-                "y": 3.0,
-                "z": 0.0
-            },
-            "direction": {
-                "x": -0.32139378786087038,
-                "y": -0.7660444378852844,
-                "z": 0.5566704869270325
-            },
-            "color": {
-                "r": 1.0,
-                "g": 1.0,
-                "b": 1.0,
-                "a": 1.0
-            },
-            "intensity": 2.0,
-            "range": 10.0,
-            "spotAngle": 30.0,
-            "innerSpotAngle": 21.802080154418947,
-            "areaSizeX": 1.0,
-            "areaSizeY": 1.0
-        },
-        {
             "name": "Point Light",
             "type": "Point",
             "position": {
@@ -70,12 +44,12 @@
                 "z": 1.0
             },
             "color": {
-                "r": 1.0,
-                "g": 1.0,
-                "b": 1.0,
+                "r": 0.8264150619506836,
+                "g": 0.029626084491610528,
+                "b": 0.029626084491610528,
                 "a": 1.0
             },
-            "intensity": 1.0,
+            "intensity": 10.0,
             "range": 10.0,
             "spotAngle": 30.0,
             "innerSpotAngle": 21.802080154418947,
@@ -85,22 +59,41 @@
     ],
     "meshInstances": [
         {
-            "objectName": "Cube",
+            "objectName": "wishgiCylinder",
             "meshPath": "Library/unity default resources",
             "position": {
-                "x": 0.9591928124427795,
-                "y": 0.7251429557800293,
-                "z": -0.3053891658782959
+                "x": 1.190000057220459,
+                "y": 1.4700000286102296,
+                "z": 0.7599999904632568
             },
             "eulerAngles": {
                 "x": 0.0,
-                "y": 0.0,
+                "y": 258.1379699707031,
                 "z": 0.0
             },
             "scale": {
-                "x": 1.0,
+                "x": 1.0000004768371583,
                 "y": 1.0,
-                "z": 1.0
+                "z": 1.0000004768371583
+            }
+        },
+        {
+            "objectName": "wishgiCapsule",
+            "meshPath": "Library/unity default resources",
+            "position": {
+                "x": -1.4500000476837159,
+                "y": 2.259999990463257,
+                "z": 1.4529999494552613
+            },
+            "eulerAngles": {
+                "x": 0.0,
+                "y": 80.79425811767578,
+                "z": 0.0
+            },
+            "scale": {
+                "x": 1.0000001192092896,
+                "y": 1.0,
+                "z": 1.0000001192092896
             }
         }
     ]
