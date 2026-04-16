@@ -6,9 +6,9 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Editor window to import probe map (.npy + meta) and apply mesh associations to uv2.
-/// Assumes probe_map.npy was produced by Offline/baking/pack_probes.py and meta json alongside it.
-/// Mesh assoc JSON must match export_probes.py output (top_k_vertex, vertices with probes{id,w}).
+/// 编辑器窗口：导入探针贴图（.npy + meta），并将网格关联写入 uv2。
+/// 默认假设 probe_map.npy 由 Offline/baking/pack_probes.py 生成，且同目录存在 meta json。
+/// 关联文件需与 export_probes.py 输出格式一致（top_k_vertex，vertices 中包含 probes{id,w}）。
 /// </summary>
 public class ProbeImportWindow : EditorWindow
 {
@@ -132,7 +132,7 @@ public class ProbeImportWindow : EditorWindow
         }
         tex.SetPixels(colors);
         tex.wrapMode = TextureWrapMode.Clamp;
-        tex.filterMode = FilterMode.Point; // avoid cross-probe blending
+        tex.filterMode = FilterMode.Point; // 避免跨探针插值混合
         tex.Apply(false, false);
 
         string assetPath = textureAssetPath;
@@ -166,7 +166,7 @@ public class ProbeImportWindow : EditorWindow
             return;
         }
         string raw = File.ReadAllText(meshAssocPath);
-        string wrapped = "{\"items\":" + raw + "}"; // JsonUtility cannot parse top-level array
+        string wrapped = "{\"items\":" + raw + "}"; // 使用 JsonUtility 时不能直接解析顶层数组
         var wrapper = JsonUtility.FromJson<MeshAssocWrapper>(wrapped);
         if (wrapper == null || wrapper.items == null || wrapper.items.Count == 0)
         {
@@ -237,13 +237,13 @@ public class ProbeImportWindow : EditorWindow
         using (var fs = File.OpenRead(path))
         using (var br = new BinaryReader(fs))
         {
-            byte[] magic = br.ReadBytes(6); // \x93NUMPY
+            byte[] magic = br.ReadBytes(6); // 用于识别 NPY 文件的魔数字节头（\x93NUMPY）
             if (magic[0] != 0x93 || magic[1] != (byte)'N') throw new Exception("Not an npy file");
             byte vMajor = br.ReadByte();
             byte vMinor = br.ReadByte();
             int headerLen = vMajor == 1 ? br.ReadUInt16() : br.ReadInt32();
             string header = Encoding.ASCII.GetString(br.ReadBytes(headerLen));
-            // crude parsing; expect little-endian float32 and fortran_order False
+            // 简单解析：仅支持小端 float32，且 fortran_order=False
             if (!header.Contains("<f4") || header.Contains("True"))
                 throw new Exception("Only supports little-endian float32, fortran_order=False");
             int shapeStart = header.IndexOf('(');

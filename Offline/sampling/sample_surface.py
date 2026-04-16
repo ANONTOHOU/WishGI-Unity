@@ -1,25 +1,19 @@
 """
-Surface sampling with blue-noise (Poisson disk) on triangle meshes plus simple
-direct-light ray queries. Inputs strictly follow the exported JSON from
-SceneLightExporter (lights) and MeshBakeExporter (mesh geometry).
-
-Usage (from repo root):
-	python Offline/sampling/sample_surface.py `
-	--mesh-json Data/meshs/SampleScene_mesh.json `
-	--scene-json Data/scenes/SampleScene_lights.json `
-	--output Data/samples/SampleScene_samples_pt.json `
-	--min-dist 0.1 `
-	--num-samples 200 `
-	--directions 64 `
-	--bounces 3 `
-	--albedo 0.8 `
-	--seed 42 `
-	--dirs-out Data/samples/SampleScene_dirs.npy
-
-Outputs JSON with per-sample position/normal/triangle index/barycentric and a
-per-light visibility & irradiance estimate using a minimalist CPU ray tracer.
-
-Dependencies: only Python stdlib + numpy. (No external raytrace libs needed.)
+在三角形网格上使用蓝噪声（泊松圆盘）进行表面采样，再加上简单的直接光光线查询。输入严格遵循从 SceneLightExporter（灯光）和 MeshBakeExporter（网格几何）导出的 JSON 格式。
+使用方法（从仓库根目录）：
+python Offline/sampling/sample_surface.py `
+--mesh-json Data/meshs/SampleScene_mesh.json `
+--scene-json Data/scenes/SampleScene_lights.json `
+--output Data/samples/SampleScene_samples_pt.json `
+--min-dist 0.1 `
+--num-samples 200 `
+--directions 64 `
+--bounces 3 `
+--albedo 0.8 `
+--seed 42 `
+--dirs-out Data/samples/SampleScene_dirs.npy
+使用极简的 CPU 光线追踪器输出每个样本的位置/法线/三角形索引/重心坐标以及每个光源的可见度和辐照度估计值的 JSON 数据。
+依赖项：仅需 Python 标准库和 numpy。（无需外部光线追踪库。）
 """
 
 from __future__ import annotations
@@ -35,7 +29,7 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 
 
-# ----------------------------- Data classes -----------------------------
+# ----------------------------- 数据类 -----------------------------
 
 
 @dataclass
@@ -49,19 +43,19 @@ class Vec3:
 
 	@staticmethod
 	def from_dict(d: dict) -> "Vec3":
-		# Support both {x,y,z} and {r,g,b} style keys from Unity JSON exports.
+		# 支持 Unity JSON 导出的 {x,y,z} 和 {r,g,b} 风格的键。
 		if "x" in d:
 			return Vec3(float(d.get("x", 0.0)), float(d.get("y", 0.0)), float(d.get("z", 0.0)))
 		if "r" in d:
 			return Vec3(float(d.get("r", 0.0)), float(d.get("g", 0.0)), float(d.get("b", 0.0)))
-		# Fallback to zeros if keys are missing
+		# 如果键缺失，则回退为零
 		return Vec3(0.0, 0.0, 0.0)
 
 
 @dataclass
 class Light:
 	name: str
-	type: str  # Directional / Point / Spot (Spot treated as point+cone)
+	type: str  # 定向 / 点 / 聚光（聚光视为点光源+锥体）
 	position: Vec3
 	direction: Vec3
 	color: Vec3
@@ -90,7 +84,7 @@ class Sample:
 	irradiance: List[float]
 
 
-# ----------------------------- Geometry utils -----------------------------
+# ----------------------------- 几何工具 -----------------------------
 
 
 def load_mesh_triangles(mesh_json: str) -> List[Triangle]:
@@ -105,7 +99,7 @@ def load_mesh_triangles(mesh_json: str) -> List[Triangle]:
 		for t in range(0, len(indices), 3):
 			i0, i1, i2 = indices[t : t + 3]
 			v0, v1, v2 = positions[i0], positions[i1], positions[i2]
-			# Use provided per-vertex normals; fallback to geometric
+			# 使用提供的每顶点法线；如果缺失则回退为几何法线
 			n = (normals[i0] + normals[i1] + normals[i2]) / 3.0
 			if np.linalg.norm(n) < 1e-6:
 				n = np.cross(v1 - v0, v2 - v0)
@@ -135,7 +129,7 @@ def load_lights(scene_json: str) -> List[Light]:
 	return lights
 
 
-# ----------------------------- Poisson disk on mesh -----------------------------
+# ----------------------------- 网格上的泊松圆盘采样 -----------------------------
 
 
 def triangle_areas(tris: Sequence[Triangle]) -> np.ndarray:
@@ -184,9 +178,9 @@ def blue_noise_sample(tris: Sequence[Triangle], target_count: int, min_dist: flo
 	total_area = cdf[-1]
 	samples: List[np.ndarray] = []
 	outputs = []
-	cell_size = min_dist / math.sqrt(3)  # tighter grid for 3D Poisson
+	cell_size = min_dist / math.sqrt(3)  # 为 3D 泊松圆盘采样设置更紧密的网格
 	grid = {}
-	max_trials = target_count * 50  # dart throwing budget
+	max_trials = target_count * 50  # 投掷飞镖的最大尝试次数，以避免死循环
 
 	for _ in range(max_trials):
 		r = random.random() * total_area
@@ -204,7 +198,7 @@ def blue_noise_sample(tris: Sequence[Triangle], target_count: int, min_dist: flo
 	return outputs
 
 
-# ----------------------------- Ray tracing (BVH + Möller–Trumbore) -----------------------------
+# ----------------------------- 光线追踪（BVH + Möller–Trumbore） -----------------------------
 
 
 @dataclass
@@ -295,7 +289,7 @@ def bvh_intersect(node: BVHNode, tris: List[Triangle], orig, dir, t_min=1e-4, t_
 
 
 def bvh_first_hit(node: BVHNode, tris: List[Triangle], orig, dir, t_min=1e-4, t_max=1e9) -> Optional[Tuple[float, int]]:
-	# Returns (t, tri_index) of the closest hit, or None.
+	# 返回最近命中点的 (t, tri_index)，若无命中则返回 None。
 	if not ray_aabb_intersect(orig, dir, node.bounds_min, node.bounds_max):
 		return None
 	if node.left is None and node.right is None:
@@ -318,11 +312,11 @@ def bvh_first_hit(node: BVHNode, tris: List[Triangle], orig, dir, t_min=1e-4, t_
 	return hit_left if hit_left[0] <= hit_right[0] else hit_right
 
 
-# ----------------------------- Lighting -----------------------------
+# ----------------------------- 光照 -----------------------------
 
 
 def cosine_hemisphere_samples(num_dirs: int) -> np.ndarray:
-	# Stratified cosine-weighted samples using concentric mapping
+	# 使用同心映射的分层余弦加权采样
 	out = []
 	m = int(math.sqrt(num_dirs))
 	if m * m < num_dirs:
@@ -353,7 +347,7 @@ def cosine_hemisphere_samples(num_dirs: int) -> np.ndarray:
 
 
 def sample_cosine_hemisphere() -> np.ndarray:
-	# Single random cosine-weighted sample on hemisphere
+	# 在半球上生成单个随机余弦加权样本
 	u1 = random.random()
 	u2 = random.random()
 	r = math.sqrt(u1)
@@ -380,42 +374,42 @@ def world_from_tangent(normal: np.ndarray, local_dir: np.ndarray) -> np.ndarray:
 
 
 def path_trace(pos: np.ndarray, normal: np.ndarray, view_dir_local: np.ndarray, lights: List[Light], bvh: BVHNode, tris: List[Triangle], max_bounces: int = 3, albedo: float = 0.8) -> np.ndarray:
-	# Simple Lambertian path tracer with next-event estimation (direct light) and cosine sampling.
+	# 带有下一个事件估计（直接光线）和余弦采样的简单兰伯特路径追踪器。
 	throughput = np.array([albedo, albedo, albedo], dtype=np.float32)
 	radiance = np.zeros(3, dtype=np.float32)
 
-	# Treat the input point as the first surface hit
+	# 将输入点视为首次碰到的表面点
 	hit_pos = pos
 	hit_normal = normal
 	ray_dir = world_from_tangent(normal, view_dir_local)
 
 	for bounce in range(max_bounces):
-		# Direct lighting at current hit
+		# 当前的直射光强度达到峰值
 		Ld = direct_radiance(hit_pos, hit_normal, lights, bvh, tris)
 		radiance += throughput * Ld
 
-		# Russian roulette (after 2 bounces)
+		# 经过两次回转后
 		if bounce >= 2:
 			p = 0.9
 			if random.random() > p:
 				break
 			throughput /= p
 
-		# Sample new diffuse direction (cosine-weighted)
+		# 采样新的漫反射方向（余弦加权）
 		new_dir_local = sample_cosine_hemisphere()
 		new_dir_world = world_from_tangent(hit_normal, new_dir_local)
 
-		# Trace to next surface
+		# 跟踪到下一个表面
 		ray_origin = hit_pos + hit_normal * 1e-4
 		hit = bvh_first_hit(bvh, tris, ray_origin, new_dir_world, 1e-4, 1e9)
 		if hit is None:
-			break  # escaped to environment (not modeled)
+			break  # 逃逸到环境（未建模）
 		t_hit, tri_idx = hit
 		tri = tris[tri_idx]
 		hit_pos = ray_origin + new_dir_world * t_hit
 		hit_normal = tri.normal
 
-		# Update throughput for diffuse bounce
+		# 更新漫反射反弹的通量
 		throughput *= albedo
 
 	return radiance
@@ -434,7 +428,7 @@ def compute_direct_lighting(sample: Sample, lights: List[Light], bvh: BVHNode, t
 			visible = not bvh_intersect(bvh, tris, pos + n * 1e-4, dir_to_light, 1e-4, 1e9)
 			ndotl = max(0.0, float(np.dot(n, dir_to_light)))
 			irr = ndotl * l.intensity if visible else 0.0
-		else:  # Point/Spot treated similarly for now (no angle falloff applied)
+		else:  # 目前对这些点/区域的处理方式相同（未应用角度衰减效果）
 			to_light = l.position.to_np() - pos
 			dist = np.linalg.norm(to_light)
 			if dist <= 1e-6 or dist > l.range:
@@ -454,7 +448,7 @@ def compute_direct_lighting(sample: Sample, lights: List[Light], bvh: BVHNode, t
 
 
 def direct_radiance(pos: np.ndarray, normal: np.ndarray, lights: List[Light], bvh: BVHNode, tris: List[Triangle]) -> np.ndarray:
-	# Returns RGB direct lighting at a surface point (Lambert, no texture), with shadow checks.
+	# 返回表面点的 RGB 直接光照（兰伯特，无纹理），并进行阴影检查。
 	n = normal
 	radiance = np.zeros(3, dtype=np.float32)
 	for l in lights:
@@ -481,11 +475,11 @@ def direct_radiance(pos: np.ndarray, normal: np.ndarray, lights: List[Light], bv
 	return radiance
 
 
-# ----------------------------- Pipeline -----------------------------
+# ----------------------------- 管线 -----------------------------
 
 
 def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: float, num_samples: int, num_dirs: int, max_bounces: int, albedo: float, seed: int, dirs_out: str | None):
-	# Fix seeds so sampling, directions, and path tracing are reproducible for SH fitting
+	# 固定种子，以便在 SH 拟合中采样、方向和路径追踪可重复
 	random.seed(seed)
 	np.random.seed(seed)
 	print(f"[WishGI] Loading mesh from {mesh_json}")
@@ -516,9 +510,9 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 	for p, tri, bary in pts:
 		s = Sample(position=p, normal=tri.normal, tri_index=tri.index, barycentric=bary, visibility=[], irradiance=[])
 		compute_direct_lighting(s, lights, bvh, tris)
-		s.radiance_dirs = []  # type: ignore[attr-defined]
+		s.radiance_dirs = []  # 类型：忽略[属性已定义]
 
-		# Path tracing per precomputed local direction set
+		# 基于预先计算的局部方向集的路径追踪
 		radiance_per_dir = []
 		for d_local in dirs_local:
 			radiance = path_trace(p, tri.normal, d_local, lights, bvh, tris, max_bounces=max_bounces, albedo=albedo)
@@ -559,7 +553,7 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 	print("[WishGI] Done.")
 
 
-# ----------------------------- CLI -----------------------------
+# ----------------------------- 命令行接口 -----------------------------
 
 
 def parse_args():

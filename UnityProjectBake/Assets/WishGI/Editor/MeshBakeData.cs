@@ -5,8 +5,8 @@ using UnityEngine;
 namespace WishGI.Baking
 {
     /// <summary>
-    /// ÓÃÓÚ´æ´¢Ò»×é¿ÉÀëÏßºæ±ºµÄÍø¸ñÊı¾İ¡£
-    /// ¿ÉÖ±½Ó×÷Îª ScriptableObject ×Ê²ú±£´æ¡£
+    /// ç”¨äºå­˜å‚¨ä¸€ä¸ªåœºæ™¯ä¸­å‚ä¸çƒ˜ç„™çš„ç½‘æ ¼æ•°æ®ã€‚
+    /// å¯ç›´æ¥ä¿å­˜ä¸º ScriptableObject èµ„äº§ã€‚
     /// </summary>
     [CreateAssetMenu(fileName = "MeshBakeData", menuName = "WishGI/Mesh Bake Data", order = 0)]
     public class MeshBakeData : ScriptableObject
@@ -18,8 +18,8 @@ namespace WishGI.Baking
     public class MeshObjectData
     {
         public string name;
-        public int instanceId;                    // ±ãÓÚ»ØËİµ½³¡¾°¶ÔÏó
-        public float[] localToWorld = new float[16]; // ÒÔÁĞÖ÷Ğò´æ´¢ 4x4 ¾ØÕó
+        public int instanceId;                    // ç”¨äºå›æº¯åˆ°åœºæ™¯å¯¹è±¡å®ä¾‹
+        public float[] localToWorld = new float[16]; // æŒ‰åˆ—ä¸»åºå­˜å‚¨ 4x4 çŸ©é˜µ
         public Vector3[] positions;
         public Vector3[] normals;
         public Vector2[] uv2;
@@ -27,7 +27,7 @@ namespace WishGI.Baking
     }
 
     /// <summary>
-    /// Json ÈİÆ÷£¨JsonUtility ĞèÒªÒ»¸ö¿ÉĞòÁĞ»¯µÄ¸ù£©
+    /// ç”¨äº JSON åºåˆ—åŒ–çš„åŒ…è£…ç±»ï¼šJsonUtility éœ€è¦ä¸€ä¸ªå¯åºåˆ—åŒ–çš„æ ¹å¯¹è±¡ã€‚
     /// </summary>
     [Serializable]
     public class MeshBakeDataJson

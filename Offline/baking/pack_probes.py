@@ -1,22 +1,22 @@
 """
-Pack probe SH coefficients into a RGBA float texture layout (1D strip).
+将探针 SH 系数打包为 RGBA 浮点纹理布局（1D 条带）。
 
-Input: probes_sh.npy produced by fit_sh.py (shape: P x C x 3, C=(order+1)^2)
-Output: .npy texture array of shape (1, width, 4) where width = P * texels_per_probe.
-Also emits a small metadata JSON for Unity importer/reference.
+输入：由 fit_sh.py 生成的 probes_sh.npy（形状：P x C x 3，C=(order+1)^2）
+输出：形状为 (1, width, 4) 的 .npy 纹理数组，其中 width = P * texels_per_probe。
+同时可额外导出一个用于 Unity 导入/对照的小型元数据 JSON。
 
-Usage (from repo root):
+用法（在仓库根目录执行）：
 
 python Offline/baking/pack_probes.py `
-  --probes-npy Data/probes/probes_sh.npy `
-  --order 2 `
-  --output-tex Data/probes/probe_map.npy `
-  --output-meta Data/probes/probe_map_meta.json
+    --probes-npy Data/probes/probes_sh.npy `
+    --order 2 `
+    --output-tex Data/probes/probe_map.npy `
+    --output-meta Data/probes/probe_map_meta.json
 
-Texture layout:
-- texels_per_probe = ceil((C*3)/4). For order=2 (C=9) this is 7 texels/probe.
-- Flatten order per probe: [c0.r, c0.g, c0.b, c1.r, c1.g, c1.b, ...], padded with zeros to 4-float texel blocks.
-- Probe p occupies texels [p*texels_per_probe, (p+1)*texels_per_probe-1] on the X axis, Y=0.
+纹理布局：
+- texels_per_probe = ceil((C*3)/4)。当 order=2（C=9）时，每个探针占 7 个 texel。
+- 每个探针的展平顺序为：[c0.r, c0.g, c0.b, c1.r, c1.g, c1.b, ...]，不足 4 浮点的块用 0 填充。
+- 第 p 个探针在 X 轴上占据区间 [p*texels_per_probe, (p+1)*texels_per_probe-1]，Y=0。
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def infer_order(num_basis: int) -> int:
 
 
 def pack_coeffs_to_texture(coeffs: np.ndarray, order: int) -> Tuple[np.ndarray, dict]:
-    """Pack (P, C, 3) coeffs into (1, width, 4) texture strip."""
+    """将形状 (P, C, 3) 的系数打包到形状 (1, width, 4) 的纹理条带。"""
     if coeffs.ndim != 3 or coeffs.shape[2] != 3:
         raise ValueError(f"coeffs must be (P, C, 3); got {coeffs.shape}")
 

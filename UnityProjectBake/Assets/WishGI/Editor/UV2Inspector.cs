@@ -4,9 +4,9 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// Quick inspector to verify uv2 was written with probe associations.
-/// - Select a Mesh asset and set probeCount (from meta).
-/// - Inspect will print min/max and first few entries decoded to indices/weights.
+/// 快速检查工具：用于验证 uv2 是否写入了探针关联信息。
+/// - 选择一个 Mesh 资源，并设置 probeCount（来自 meta）。
+/// - 点击检查后会输出最小/最大值，以及前若干项解码后的索引与权重。
 /// </summary>
 public class UV2Inspector : EditorWindow
 {
@@ -46,7 +46,7 @@ public class UV2Inspector : EditorWindow
         }
 
         var uv2 = new System.Collections.Generic.List<Vector4>();
-        mesh.GetUVs(1, uv2); // channel 1 is uv2
+        mesh.GetUVs(1, uv2); // 通道 1 即 uv2
         if (uv2 == null || uv2.Count != mesh.vertexCount)
         {
             Debug.LogWarning($"uv2 missing or size mismatch. verts={mesh.vertexCount}, uv2={(uv2 == null ? 0 : uv2.Count)}");

@@ -13,7 +13,7 @@ namespace WishGI.Baking.Editor
     /// 菜单路径：Tools/WishGI/Generate UV2 For Scene Meshes
     /// 
     /// 原理：
-    ///   Unity 编辑器提供 Unwrapping.GenerateSecondaryUVSet(mesh)，
+    ///   可调用编辑器 API Unwrapping.GenerateSecondaryUVSet(mesh)，
     ///   可在编辑期为任意可读 Mesh 生成 UV2，功能等同于
     ///   模型导入设置中的 "Generate Lightmap UVs"。
     ///   本脚本批量扫描场景，自动补齐缺失的 UV2。
@@ -99,8 +99,8 @@ namespace WishGI.Baking.Editor
                 // 对于导入模型的 Mesh（如 FBX/GLTF），sharedMesh
                 // 是资产引用，直接修改会改变原始资产。
                 // 这里提供两种策略：
-                //   A) 直接修改原始 Mesh（简单，但会改动资产）
-                //   B) 复制一份再生成（安全，不动原始资产）
+                //   方案一：直接修改原始 Mesh（简单，但会改动资产）
+                //   方案二：复制一份再生成（安全，不动原始资产）
                 //
                 // 下面默认使用 A，如需 B 请参考注释。
 
@@ -108,14 +108,10 @@ namespace WishGI.Baking.Editor
                 GenerateUV2(mesh, mf.gameObject.name);
                 generated++;
 
-                // ── 策略 B（可选）：复制 Mesh 后生成 ──
-                // Mesh cloned = UEObject.Instantiate(mesh);
-                // cloned.name = mesh.name + "_UV2";
-                // GenerateUV2(cloned, mf.gameObject.name);
-                // mf.sharedMesh = cloned;
-                // // 可选：保存为资产
-                // // AssetDatabase.CreateAsset(cloned, $"Assets/WishGI/GeneratedUV2/{cloned.name}.asset");
-                // generated++;
+                // ── 策略 B（可选）：复制 Mesh 后生成（示例步骤见下）──
+                // 示例1：复制网格并命名为“原名_UV2”。
+                // 示例2：对复制网格调用 GenerateUV2，再回写到 mf.sharedMesh。
+                // 示例3：如需持久化，可通过 AssetDatabase.CreateAsset 保存为资产。
             }
 
             // ── 结果汇总 ──
@@ -145,10 +141,10 @@ namespace WishGI.Baking.Editor
             // 展 UV 参数，可根据项目需求调整
             var settings = new UnwrapParam();
             UnwrapParam.SetDefaults(out settings);
-            // settings.hardAngle  = 88f;   // 硬边角度阈值（度）
-            // settings.packMargin = 0.004f; // UV 岛间距
-            // settings.angleError = 0.08f;  // 角度误差容忍
-            // settings.areaError  = 0.15f;  // 面积误差容忍
+            // 可调参数一：hardAngle = 88f（硬边角度阈值，单位度）
+            // 可调参数二：packMargin = 0.004f（UV 岛间距）
+            // 可调参数三：angleError = 0.08f（角度误差容忍）
+            // 可调参数四：areaError = 0.15f（面积误差容忍）
 
             Unwrapping.GenerateSecondaryUVSet(mesh, settings);
 

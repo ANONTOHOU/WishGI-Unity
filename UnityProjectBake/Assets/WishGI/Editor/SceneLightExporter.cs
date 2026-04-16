@@ -6,7 +6,7 @@ using System.IO;
 
 namespace WishGI.Editor
 {
-    // 用于序列化的简单向量结构，保持JSON清晰易读
+    // 用于序列化的简单向量结构，保持 JSON 清晰易读
     [System.Serializable]
     public class Vec3Data
     {
@@ -27,14 +27,14 @@ namespace WishGI.Editor
         public string name;
         public string type;
         public Vec3Data position;
-        public Vec3Data direction; // 灯光的前朝向 (forward)
+        public Vec3Data direction; // 灯光前向（forward）
         public ColorData color;
         public float intensity;
         public float range;
         public float spotAngle;
         public float innerSpotAngle;
         
-        // 如果是区域光（Area Light）相关的尺寸
+        // 区域光（Area Light）相关尺寸
         public float areaSizeX;
         public float areaSizeY;
     }
@@ -42,13 +42,13 @@ namespace WishGI.Editor
     [System.Serializable]
     public class AmbientExportData
     {
-        public string mode; // Flat / Trilight / Skybox
+        public string mode; // 环境光模式：Flat / Trilight / Skybox
         public ColorData ambientColor;
         public ColorData skyColor;
         public ColorData equatorColor;
         public ColorData groundColor;
         public float ambientIntensity;
-        public string skyboxTexturePath; // HDRI贴图的路径
+        public string skyboxTexturePath; // 天空盒 HDRI 贴图路径
     }
 
     [System.Serializable]

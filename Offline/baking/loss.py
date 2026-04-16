@@ -1,4 +1,4 @@
-"""Small helpers for SH least-squares solving."""
+"""SH 最小二乘求解所需的小型辅助函数。"""
 
 from __future__ import annotations
 
@@ -6,15 +6,15 @@ import numpy as np
 
 
 def solve_ridge(A: np.ndarray, b: np.ndarray, lambda_reg: float) -> np.ndarray:
-	"""Solve (A^T A + λI)x = A^T b for multiple RHS columns.
+	"""对多列右端项求解 (A^T A + λI)x = A^T b。
 
-	Args:
-		A: (M,N) design matrix.
-		b: (M,K) target matrix (e.g., RGB).
-		lambda_reg: non-negative ridge weight.
+	参数：
+		A: 形状为 (M,N) 的设计矩阵。
+		b: 形状为 (M,K) 的目标矩阵（例如 RGB）。
+		lambda_reg: 非负的岭回归权重。
 
-	Returns:
-		(N,K) solution matrix.
+	返回：
+		形状为 (N,K) 的解矩阵。
 	"""
 	A = np.asarray(A, dtype=np.float64)
 	b = np.asarray(b, dtype=np.float64)
@@ -29,7 +29,7 @@ def solve_ridge(A: np.ndarray, b: np.ndarray, lambda_reg: float) -> np.ndarray:
 	try:
 		return np.linalg.solve(ATA, ATb)
 	except np.linalg.LinAlgError:
-		# Fall back to least-squares on the regularized normal system for near-singular cases.
+		# 对接近奇异的情况，回退到正则化正规方程的最小二乘解。
 		x, *_ = np.linalg.lstsq(ATA, ATb, rcond=None)
 		return x
 

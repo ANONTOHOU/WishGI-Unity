@@ -1,5 +1,5 @@
 """
-Generate probe distribution and sample-to-probe weight matrix W.
+生成探针分布与 sample-to-probe 权重矩阵 W。
 
 python Offline/export/export_probes.py `
   --samples-json Data/samples/SampleScene_samples_pt.json `
@@ -9,35 +9,35 @@ python Offline/export/export_probes.py `
   --top-k-vertex 2 `
   --output-dir Data/probes
 
-Inputs
-------
-- samples JSON (e.g., Data/samples/<scene>_samples_pt.json)
-    Expected fields: samples[i].position.{x,y,z}. If sample_id absent, index is used.
-- mesh JSON (e.g., Data/meshs/<scene>_mesh.json) for vertex positions.
-- desired probe count K.
+输入
+-----
+- 采样点 JSON（例如 Data/samples/<scene>_samples_pt.json）
+    期望字段：samples[i].position.{x,y,z}。若缺少 sample_id，则使用索引。
+- 网格 JSON（例如 Data/meshs/<scene>_mesh.json），用于读取顶点位置。
+- 目标探针数量 K。
 
-Outputs
--------
-- probes.json: list of {"probe_id", "position", "space"}
-- sample_weights.json: sparse row format for W (row = sample, cols = top-K probes)
+输出
+-----
+- probes.json: 形如 {"probe_id", "position", "space"} 的列表
+- sample_weights.json: W 的稀疏行格式（行=sample，列=top-K probes）
     {
         "num_samples": N,
         "num_probes": K,
         "top_k_sample": topK_sample,
         "weights": [ {"sample_id": i, "probes": [{"id": k, "w": w_ik}, ...]} ]
     }
-- mesh_assoc.json: per-mesh-object vertex→probe关联 (top-K 归一化)
+- mesh_assoc.json: 每个网格对象的 vertex→probe 关联（top-K 归一化）
     [
         {"mesh_name": name, "top_k_vertex": K, "vertices": [ {"id": vid, "probes": [{"id": k, "w": w_vk}, ...]} ]}
     ]
 
-Notes on W (for least squares)
-------------------------------
-- The sample_weights build matrix W where W[i,k] is the weight of sample i for probe k.
-- Rows are normalized: sum_k W[i,k] = 1 (using top-K nearest probes, inverse-distance).
-- In SH solve, for each sample i and direction d: f_i(d) ≈ Σ_k W[i,k] * SH_k(d).
-    When组装正规方程时，W 作为从 probe SH 到 sample SH 的线性混合矩阵。
-    mesh_assoc 同理，用于把顶点权重写入 uv2（top-K 归一化）。
+关于 W 的说明（最小二乘）
+------------------------
+- sample_weights 构建矩阵 W，其中 W[i,k] 是 sample i 对 probe k 的权重。
+- 每行归一化：sum_k W[i,k] = 1（采用 top-K 最近探针与反距离加权）。
+- 在 SH 求解中，对每个 sample i 和方向 d：f_i(d) ≈ Σ_k W[i,k] * SH_k(d)。
+  组装正规方程时，W 作为从 probe SH 到 sample SH 的线性混合矩阵。
+  mesh_assoc 同理，用于将顶点权重写入 uv2（top-K 归一化）。
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ from typing import List, Tuple, Dict, Any
 import numpy as np
 
 
-# ----------------------------- Data structures -----------------------------
+# ----------------------------- 数据结构 -----------------------------
 
 
 @dataclass
@@ -73,7 +73,7 @@ class MeshObject:
     vertices: np.ndarray  # (V,3)
 
 
-# ----------------------------- IO helpers -----------------------------
+# ----------------------------- IO 辅助 -----------------------------
 
 
 def load_samples(path: str) -> List[Sample]:
@@ -131,11 +131,11 @@ def save_mesh_assoc(path: str, assoc_list: List[Dict[str, Any]], top_k_vertex: i
         json.dump(assoc_list, f, indent=2)
 
 
-# ----------------------------- Clustering (K-means) -----------------------------
+# ----------------------------- 聚类（K 中心点法） -----------------------------
 
 
 def kmedoids(points: np.ndarray, k: int, iters: int = 20, seed: int = 42) -> np.ndarray:
-    """K-Medoids on Nx3 points."""
+    """在 Nx3 点集上执行 K-Medoids。"""
     rng = np.random.default_rng(seed)
     n = points.shape[0]
     if n == 0:
@@ -170,7 +170,7 @@ def kmedoids(points: np.ndarray, k: int, iters: int = 20, seed: int = 42) -> np.
 
 
 def topk_inverse_distance(points: np.ndarray, centers: np.ndarray, top_k: int, eps: float = 1e-8):
-    """Return sparse weights list for JSON. Each row sums to 1 (top-K nearest with inverse-distance)."""
+    """返回用于 JSON 的稀疏权重列表。每行和为 1（top-K 最近点反距离加权）。"""
     n = points.shape[0]
     k_centers = centers.shape[0]
     if k_centers == 0:
@@ -204,7 +204,7 @@ def compute_vertex_assoc(meshes: List[MeshObject], centers: np.ndarray, top_k_ve
             assoc_list.append({"mesh_name": m.name, "vertices": []})
             continue
         rows = topk_inverse_distance(m.vertices, centers, top_k=top_k_vertex)
-        # rename id -> vertex_id
+        # 将 id 重命名为 vertex_id
         for r in rows:
             r["vertex_id"] = r.pop("id")
         assoc_list.append({
@@ -215,37 +215,37 @@ def compute_vertex_assoc(meshes: List[MeshObject], centers: np.ndarray, top_k_ve
     return assoc_list
 
 
-# ----------------------------- Weights (build W) -----------------------------
+# ----------------------------- 权重（构建 W） -----------------------------
 
 
 def compute_sample_weights(points: np.ndarray, centers: np.ndarray, top_k: int):
     rows = topk_inverse_distance(points, centers, top_k=top_k)
-    # rename id -> sample_id for clarity
+    # 为清晰起见，将 id 重命名为 sample_id
     for r in rows:
         r["sample_id"] = r.pop("id")
     return rows
 
 
 def run_all(samples_path: str, mesh_path: str, probes_count: int, top_k_sample: int, top_k_vertex: int, output_dir: str, seed: int = 42):
-    # 1) load samples
+    # 1) 加载采样点
     samples = load_samples(samples_path)
     if len(samples) == 0:
         raise ValueError("samples-json does not contain any samples")
     points = np.stack([s.pos for s in samples], axis=0)
 
-    # 2) probe clustering (K-medoids)
+    # 2) 探针聚类（K 中心点法）
     centers = kmedoids(points, probes_count, iters=30, seed=seed)
     actual_probes = centers.shape[0]
     probes = [Probe(idx=i, pos=centers[i]) for i in range(actual_probes)]
 
-    # 3) W matrix for samples -> probes (top-K inverse distance, rows sum to 1)
+    # 3) 采样点 -> 探针 的 W 矩阵（top-K 反距离加权，行和为 1）
     weights_sparse = compute_sample_weights(points, centers, top_k=top_k_sample)
 
-    # 4) mesh vertex -> probe assoc (top-K inverse distance, rows sum to 1)
+    # 4) 网格顶点 -> 探针 关联（top-K 反距离加权，行和为 1）
     meshes = load_mesh_vertices(mesh_path)
     mesh_assoc = compute_vertex_assoc(meshes, centers, top_k_vertex=top_k_vertex)
 
-    # 5) save outputs
+    # 5) 保存输出
     os.makedirs(output_dir, exist_ok=True)
     save_probes(os.path.join(output_dir, "probes.json"), probes, space="world")
     save_weights(os.path.join(output_dir, "sample_weights.json"), weights_sparse, num_samples=len(samples), num_probes=actual_probes, top_k=min(top_k_sample, actual_probes))
@@ -255,14 +255,14 @@ def run_all(samples_path: str, mesh_path: str, probes_count: int, top_k_sample: 
     print(f"[export_probes] Saved probes.json, sample_weights.json, mesh_assoc.json to {output_dir}")
 
 
-# ----------------------------- Main pipeline -----------------------------
+# ----------------------------- 主流程 -----------------------------
 
 
 def run(samples_path: str, probes_count: int, top_k: int, output_dir: str, seed: int = 42):
     raise RuntimeError("run() signature changed; use run_all() instead")
 
 
-# ----------------------------- CLI -----------------------------
+# ----------------------------- 命令行接口 -----------------------------
 
 
 def parse_args():

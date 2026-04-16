@@ -1,20 +1,20 @@
 """
-Fit SH coefficients per probe from sampled radiance and sample→probe weights.
+根据采样辐亮度与 sample→probe 权重，为每个探针拟合 SH 系数。
 
-Usage (from repo root):
+用法（在仓库根目录执行）：
 
 python Offline/baking/fit_sh.py \
-  --samples-json Data/samples/SampleScene_samples_pt.json \
-  --sample-weights Data/probes/sample_weights.json \
-  --order 2 \
-  --lambda-reg 1e-4 \
-  --output-npy Data/probes/probes_sh.npy \
-  --output-json Data/probes/probes_sh.json \
-  --dirs-npy Data/samples/SampleScene_dirs.npy
+	--samples-json Data/samples/SampleScene_samples_pt.json \
+	--sample-weights Data/probes/sample_weights.json \
+	--order 2 \
+	--lambda-reg 1e-4 \
+	--output-npy Data/probes/probes_sh.npy \
+	--output-json Data/probes/probes_sh.json \
+	--dirs-npy Data/samples/SampleScene_dirs.npy
 
-Directions are required to evaluate the SH basis. Supply them via --dirs-npy
-or embed them in samples.json using the updated sampler (dirsLocal field). If
-neither is present we abort to avoid fitting against unknown directions.
+计算 SH 基函数必须提供方向集。可通过 --dirs-npy 传入，或在新版采样器
+导出的 samples.json 中使用 dirsLocal 字段内嵌方向。若两者都不存在，
+程序会中止，避免在未知方向上进行拟合。
 """
 
 from __future__ import annotations
@@ -34,8 +34,8 @@ from sh_basis import eval_sh_basis, num_sh_coeffs
 @dataclass
 class SampleRadiance:
 	sample_id: int
-	radiance: np.ndarray  # (num_dirs, 3)
-	normal: np.ndarray    # (3,)
+	radiance: np.ndarray  # 形状：(num_dirs, 3)
+	normal: np.ndarray    # 形状：(3,)
 
 def load_samples(path: str) -> Tuple[List[SampleRadiance], np.ndarray | None, int]:
 	with open(path, "r", encoding="utf-8") as f:
@@ -105,7 +105,7 @@ def load_dirs(dirs_npy: str | None, dirs_from_samples: np.ndarray | None, expect
 def build_system(samples: List[SampleRadiance], weights: Dict[int, List[Tuple[int, float]]], dirs: np.ndarray, order: int, num_probes: int):
 	num_dirs = dirs.shape[0]
 	C = num_sh_coeffs(order)
-	basis = eval_sh_basis(dirs, order)  # (D,C)
+	basis = eval_sh_basis(dirs, order)  # 形状：(D, C)
 	rows = len(samples) * num_dirs
 	A = np.zeros((rows, num_probes * C), dtype=np.float64)
 	b = np.zeros((rows, 3), dtype=np.float64)
@@ -181,7 +181,7 @@ def main():
 	A, b, C = build_system(samples, weights, dirs, args.order, num_probes)
 	print(f"[fit_sh] Rows={A.shape[0]}, Cols={A.shape[1]}, Probes={num_probes}, topK={top_k}, Order={args.order}, Lambda={args.lambda_reg}")
 
-	coeff_vec = solve_ridge(A, b, lambda_reg=args.lambda_reg)  # (P*C, 3)
+	coeff_vec = solve_ridge(A, b, lambda_reg=args.lambda_reg)  # 形状：(P*C, 3)
 	coeffs = coeff_vec.reshape(num_probes, C, 3)
 	save_outputs(coeffs, args.order, args.output_npy, args.output_json)
 	print(f"[fit_sh] Saved coeffs to {args.output_npy}" + (f" and {args.output_json}" if args.output_json else ""))

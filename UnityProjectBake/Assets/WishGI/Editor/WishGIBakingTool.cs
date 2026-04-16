@@ -46,8 +46,8 @@ public class WishGIBakingTool : EditorWindow
 
     public enum QualityPreset
     {
-        Low,       // 64 probes, 128 directions, 256 samples
-        High       // 128 probes, 960 directions, 1024 samples
+        Low,       // 64 个探针，128 个方向，256 个采样点
+        High       // 128 个探针，960 个方向，1024 个采样点
     }
 
     private string meshJsonPath = "Data/meshs/SampleScene_mesh.json";
@@ -69,7 +69,7 @@ public class WishGIBakingTool : EditorWindow
 
         string workspaceRoot = GetWorkspaceRoot();
 
-        // Mesh JSON Input
+        // 网格 JSON 输入
         GUILayout.BeginHorizontal();
         meshJsonPath = EditorGUILayout.TextField("Mesh JSON", meshJsonPath);
         if (GUILayout.Button("Browse", GUILayout.Width(70)))
@@ -79,7 +79,7 @@ public class WishGIBakingTool : EditorWindow
         }
         GUILayout.EndHorizontal();
 
-        // Scene Lights Input
+        // 场景灯光 JSON 输入
         GUILayout.BeginHorizontal();
         sceneJsonPath = EditorGUILayout.TextField("Scene Lights JSON", sceneJsonPath);
         if (GUILayout.Button("Browse", GUILayout.Width(70)))
@@ -118,7 +118,7 @@ public class WishGIBakingTool : EditorWindow
 
     private string GetWorkspaceRoot()
     {
-        // 向上两层，返回到 Workspace 根目录 D:\Programs\unity\WishGI-Unity
+        // 向上两层，返回工作区根目录 D:\Programs\unity\WishGI-Unity
         return Path.GetFullPath(Path.Combine(Application.dataPath, "../..")).Replace('\\', '/');
     }
 
@@ -129,7 +129,7 @@ public class WishGIBakingTool : EditorWindow
         {
             return absPath.Substring(workspaceRoot.Length).TrimStart('/');
         }
-        return absPath; // If it's outside the workspace, return absolute
+        return absPath; // 若位于工作区之外，则返回绝对路径
     }
 
     private void RunBakingPipeline()
@@ -144,7 +144,7 @@ public class WishGIBakingTool : EditorWindow
             return;
         }
 
-        // Configure parameters based on preset
+        // 根据预设配置参数
         int probes = 64;
         int dirs = 128;
         int samples = 256;
@@ -156,7 +156,7 @@ public class WishGIBakingTool : EditorWindow
             samples = 1024;
         }
 
-        // Auto Naming (Scene_Date_Count)
+        // 自动命名（Scene_Date_Count）
         string sceneName = Path.GetFileNameWithoutExtension(meshJsonPath).Replace("_mesh", "");
         string dateStr = DateTime.Now.ToString("yyyyMMdd");
         string probesDirBase = Path.Combine(workspaceRoot, "Data", "probes").Replace('\\', '/');
@@ -165,7 +165,7 @@ public class WishGIBakingTool : EditorWindow
         if (!Directory.Exists(probesDirBase)) Directory.CreateDirectory(probesDirBase);
         if (!Directory.Exists(samplesDirBase)) Directory.CreateDirectory(samplesDirBase);
 
-        // Scan for existing folders to compute the count for today
+        // 扫描已有目录，计算当日序号
         int count = 1;
         string baseName = $"{sceneName}-{dateStr}-{count:D2}";
         string outputFolder = Path.Combine(probesDirBase, baseName).Replace('\\', '/');
@@ -179,7 +179,7 @@ public class WishGIBakingTool : EditorWindow
 
         Directory.CreateDirectory(outputFolder);
 
-        // Set paths relative to workspace working directory
+        // 设置相对于工作区工作目录的路径
         string samplesOut = $"Data/samples/{baseName}_samples_pt.json";
         string dirsOut = $"Data/samples/{baseName}_dirs.npy";
         string outDir = $"Data/probes/{baseName}";
@@ -325,14 +325,14 @@ public class WishGIBakingTool : EditorWindow
         if (wrapper == null || wrapper.items == null || wrapper.items.Count == 0)
             throw new Exception("No assoc entries found in mesh_assoc.json");
 
-        // Scan all MeshFilters in the scene
+        // 扫描场景中所有 MeshFilter
         var filters = UnityEngine.Object.FindObjectsByType<MeshFilter>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         var goMap = new Dictionary<string, Mesh>();
         foreach (var mf in filters)
         {
             if (mf.sharedMesh != null && !goMap.ContainsKey(mf.gameObject.name))
             {
-                // We map the GameObject name to its sharedMesh, because the exporter used go.name
+                // 以 GameObject 名称映射到 sharedMesh，因为导出器使用的是 go.name
                 goMap[mf.gameObject.name] = mf.sharedMesh;
             }
         }

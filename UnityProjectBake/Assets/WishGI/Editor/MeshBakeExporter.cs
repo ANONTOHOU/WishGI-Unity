@@ -5,7 +5,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using WishGI.Baking;
 
-// 消除 System.* 和 UnityEngine.Object 命名空间冲突
+// 消除 System.* 与 UnityEngine.Object 的命名空间冲突
 using Debug = UnityEngine.Debug;
 using Application = UnityEngine.Application;
 using UEObject = UnityEngine.Object;
@@ -13,7 +13,7 @@ using UEObject = UnityEngine.Object;
 namespace WishGI.Baking.Editor
 {
     /// <summary>
-    /// Tools/WishGI/Export Mesh Bake Data (JSON / SO)
+    /// 菜单入口：WishGI 第 2 步，导出网格烘焙数据（JSON / SO）。
     /// </summary>
     public static class MeshBakeExporter
     {
