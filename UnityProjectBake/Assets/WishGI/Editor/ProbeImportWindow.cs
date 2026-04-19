@@ -54,12 +54,15 @@ public class ProbeImportWindow : EditorWindow
         public float w;
     }
 
-    [MenuItem("WishGI/Probe Importer")]
+    [MenuItem("GI/Probe Importer")]
     public static void ShowWindow()
     {
-        GetWindow<ProbeImportWindow>(true, "WishGI Probe Importer", true);
+        GetWindow<ProbeImportWindow>(true, "GI Probe Importer", true);
     }
 
+    /// <summary>
+    /// 绘制导入器 UI：上半区导入 Probe 纹理，下半区写入 Mesh 关联。
+    /// </summary>
     private void OnGUI()
     {
         EditorGUILayout.LabelField("Probe Map Inputs", EditorStyles.boldLabel);
@@ -85,6 +88,9 @@ public class ProbeImportWindow : EditorWindow
         EditorGUILayout.EndVertical();
     }
 
+    /// <summary>
+    /// 带文件选择按钮的通用输入框。
+    /// </summary>
     private string FileField(string label, string value)
     {
         EditorGUILayout.BeginHorizontal();
@@ -98,6 +104,9 @@ public class ProbeImportWindow : EditorWindow
         return value;
     }
 
+    /// <summary>
+    /// 将离线输出的 probe_map.npy 导入为 Unity Texture2D 资产。
+    /// </summary>
     private void ImportProbeTexture()
     {
         if (string.IsNullOrEmpty(probeNpyPath) || string.IsNullOrEmpty(probeMetaPath))
@@ -119,6 +128,7 @@ public class ProbeImportWindow : EditorWindow
             return;
         }
 
+        // 使用 RGBAFloat 与 pack_probes.py 输出的 float32 布局一一对应，避免精度损失。
         Texture2D tex = new Texture2D(meta.width, meta.height, TextureFormat.RGBAFloat, false, true);
         var colors = new Color[meta.width * meta.height];
         int idx = 0;
@@ -153,6 +163,9 @@ public class ProbeImportWindow : EditorWindow
         ShowNotification(new GUIContent($"Probe texture imported -> {assetPath}"));
     }
 
+    /// <summary>
+    /// 将 mesh_assoc.json 的顶点-探针关系编码写入目标网格 uv2。
+    /// </summary>
     private void ApplyMeshAssoc()
     {
         if (targetMesh == null)
@@ -195,6 +208,7 @@ public class ProbeImportWindow : EditorWindow
             if (v.probes != null && v.probes.Count > 0)
             {
                 w0 = v.probes[0].w;
+                // 索引归一化到 [0,1] 存入 uv2，运行时再乘回 (probeCount-1) 进行解码。
                 i0 = v.probes[0].id / (float)(probeCount - 1);
                 if (v.probes.Count > 1)
                 {
@@ -211,6 +225,9 @@ public class ProbeImportWindow : EditorWindow
         ShowNotification(new GUIContent("Applied mesh assoc to uv2"));
     }
 
+    /// <summary>
+    /// 从 meta 文件推断探针总数，供 uv2 索引归一化/反归一化使用。
+    /// </summary>
     private int InferProbeCountFromMeta()
     {
         string path = probeMetaPath;
@@ -232,6 +249,9 @@ public class ProbeImportWindow : EditorWindow
         return meta != null ? meta.num_probes : -1;
     }
 
+    /// <summary>
+    /// 读取 .npy（float32, little-endian, C-order）并返回展平数组与形状。
+    /// </summary>
     private float[] ReadNpyFloat32(string path, out int[] shape)
     {
         using (var fs = File.OpenRead(path))

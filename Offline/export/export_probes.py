@@ -77,6 +77,11 @@ class MeshObject:
 
 
 def load_samples(path: str) -> List[Sample]:
+    """从采样 JSON 读取 sample 点位。
+
+    兼容两种字段命名：position 与 pos。
+    若缺失 sample_id，则用数组索引回填，保证后续索引稳定。
+    """
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     samples_json = data.get("samples", []) if isinstance(data, dict) else data
@@ -90,6 +95,7 @@ def load_samples(path: str) -> List[Sample]:
 
 
 def load_mesh_vertices(path: str) -> List[MeshObject]:
+    """读取导出网格的顶点位置，仅保留关联探针所需的几何信息。"""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     objs = []
@@ -105,6 +111,7 @@ def load_mesh_vertices(path: str) -> List[MeshObject]:
 
 
 def save_probes(path: str, probes: List[Probe], space: str = "world") -> None:
+    """保存聚类后的探针中心。"""
     out = [
         {"probe_id": p.idx, "position": {"x": float(p.pos[0]), "y": float(p.pos[1]), "z": float(p.pos[2])}, "space": space}
         for p in probes
@@ -114,6 +121,7 @@ def save_probes(path: str, probes: List[Probe], space: str = "world") -> None:
 
 
 def save_weights(path: str, weights, num_samples: int, num_probes: int, top_k: int) -> None:
+    """保存 sample->probe 稀疏权重矩阵（JSON 友好格式）。"""
     out = {
         "num_samples": num_samples,
         "num_probes": num_probes,
@@ -125,6 +133,7 @@ def save_weights(path: str, weights, num_samples: int, num_probes: int, top_k: i
 
 
 def save_mesh_assoc(path: str, assoc_list: List[Dict[str, Any]], top_k_vertex: int) -> None:
+    """保存 mesh 顶点到 probe 的关联，并写入 top_k 元信息。"""
     for entry in assoc_list:
         entry["top_k_vertex"] = top_k_vertex
     with open(path, "w", encoding="utf-8") as f:
@@ -135,7 +144,12 @@ def save_mesh_assoc(path: str, assoc_list: List[Dict[str, Any]], top_k_vertex: i
 
 
 def kmedoids(points: np.ndarray, k: int, iters: int = 20, seed: int = 42) -> np.ndarray:
-    """在 Nx3 点集上执行 K-Medoids。"""
+    """在 Nx3 点集上执行 K-Medoids。
+
+    这里选择 K-Medoids 而不是 K-Means：
+    - 代表点来自真实样本，几何解释更稳定。
+    - 对离群点鲁棒性更好，有助于减少 probe 漏光风险。
+    """
     rng = np.random.default_rng(seed)
     n = points.shape[0]
     if n == 0:
@@ -170,7 +184,10 @@ def kmedoids(points: np.ndarray, k: int, iters: int = 20, seed: int = 42) -> np.
 
 
 def topk_inverse_distance(points: np.ndarray, centers: np.ndarray, top_k: int, eps: float = 1e-8):
-    """返回用于 JSON 的稀疏权重列表。每行和为 1（top-K 最近点反距离加权）。"""
+    """计算 top-K 反距离权重。
+
+    每一行都会归一化到 1，保证可直接作为线性混合系数使用。
+    """
     n = points.shape[0]
     k_centers = centers.shape[0]
     if k_centers == 0:
@@ -198,6 +215,7 @@ def topk_inverse_distance(points: np.ndarray, centers: np.ndarray, top_k: int, e
 
 
 def compute_vertex_assoc(meshes: List[MeshObject], centers: np.ndarray, top_k_vertex: int):
+    """构建每个网格顶点到 probe 的稀疏关联。"""
     assoc_list = []
     for m in meshes:
         if m.vertices.shape[0] == 0:
@@ -219,6 +237,7 @@ def compute_vertex_assoc(meshes: List[MeshObject], centers: np.ndarray, top_k_ve
 
 
 def compute_sample_weights(points: np.ndarray, centers: np.ndarray, top_k: int):
+    """构建 sample->probe 的权重矩阵 W（稀疏表示）。"""
     rows = topk_inverse_distance(points, centers, top_k=top_k)
     # 为清晰起见，将 id 重命名为 sample_id
     for r in rows:
@@ -227,21 +246,25 @@ def compute_sample_weights(points: np.ndarray, centers: np.ndarray, top_k: int):
 
 
 def run_all(samples_path: str, mesh_path: str, probes_count: int, top_k_sample: int, top_k_vertex: int, output_dir: str, seed: int = 42):
+    """执行完整导出流程：聚类探针、生成 W、生成顶点关联并写文件。"""
     # 1) 加载采样点
     samples = load_samples(samples_path)
     if len(samples) == 0:
         raise ValueError("samples-json does not contain any samples")
     points = np.stack([s.pos for s in samples], axis=0)
 
-    # 2) 探针聚类（K 中心点法）
+    # 2) 探针聚类（K-Medoids）
+    # probes_count 由上层质量档位控制，作为“容量预算”；seed 固定可复现。
     centers = kmedoids(points, probes_count, iters=30, seed=seed)
     actual_probes = centers.shape[0]
     probes = [Probe(idx=i, pos=centers[i]) for i in range(actual_probes)]
 
     # 3) 采样点 -> 探针 的 W 矩阵（top-K 反距离加权，行和为 1）
+    # top_k_sample 常设为 2~4，可在表达能力与存储开销之间平衡。
     weights_sparse = compute_sample_weights(points, centers, top_k=top_k_sample)
 
     # 4) 网格顶点 -> 探针 关联（top-K 反距离加权，行和为 1）
+    # top_k_vertex 通常更小（如 2），因为运行时每顶点读取探针数越少越快。
     meshes = load_mesh_vertices(mesh_path)
     mesh_assoc = compute_vertex_assoc(meshes, centers, top_k_vertex=top_k_vertex)
 
@@ -259,6 +282,7 @@ def run_all(samples_path: str, mesh_path: str, probes_count: int, top_k_sample: 
 
 
 def run(samples_path: str, probes_count: int, top_k: int, output_dir: str, seed: int = 42):
+    """兼容旧接口的保护函数，防止误调用过期签名。"""
     raise RuntimeError("run() signature changed; use run_all() instead")
 
 
@@ -266,6 +290,7 @@ def run(samples_path: str, probes_count: int, top_k: int, output_dir: str, seed:
 
 
 def parse_args():
+    """定义命令行参数。"""
     parser = argparse.ArgumentParser(description="Probe clustering and sample-to-probe weight matrix (W) export")
     parser.add_argument("--samples-json", required=True, help="Path to surface samples JSON (contains samples[].position)")
     parser.add_argument("--mesh-json", required=True, help="Path to mesh JSON (contains meshObjects[].positions for vertices)")
@@ -278,6 +303,7 @@ def parse_args():
 
 
 def main():
+    """命令行入口。"""
     args = parse_args()
     run_all(
         samples_path=args.samples_json,

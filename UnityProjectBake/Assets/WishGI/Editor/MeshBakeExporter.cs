@@ -13,11 +13,14 @@ using UEObject = UnityEngine.Object;
 namespace WishGI.Baking.Editor
 {
     /// <summary>
-    /// 菜单入口：WishGI 第 2 步，导出网格烘焙数据（JSON / SO）。
+    /// 菜单入口： 第 2 步，导出网格烘焙数据（JSON / SO）。
     /// </summary>
     public static class MeshBakeExporter
     {
-        [MenuItem("WishGI/Step 2: Export Mesh Bake Data/Export JSON", false, 12)]
+        /// <summary>
+        /// 导出当前场景参与 GI 的网格数据到 JSON。
+        /// </summary>
+        [MenuItem("GI/Step 2: Export Mesh Bake Data/Export JSON", false, 12)]
         public static void ExportJson()
         {
             var data = CollectBakeData();
@@ -37,16 +40,20 @@ namespace WishGI.Baking.Editor
             string sceneName = SceneManager.GetActiveScene().name;
             if (string.IsNullOrEmpty(sceneName)) sceneName = "UntitledScene";
 
+            // 采用“场景名 + _mesh.json”的默认命名，便于后续 Python 管线自动识别输入。
             string path = EditorUtility.SaveFilePanel("Save Mesh Bake JSON", defaultFolder, sceneName + "_mesh.json", "json");
             if (string.IsNullOrEmpty(path)) return;
 
             var json = JsonUtility.ToJson(data, true);
             File.WriteAllText(path, json);
-            Debug.Log($"[WishGI] 成功导出 {data.meshObjects.Count} 个网格的烘焙数据至: {path}");
+            Debug.Log($"[GI] 成功导出 {data.meshObjects.Count} 个网格的烘焙数据至: {path}");
             AssetDatabase.Refresh();
         }
 
-        [MenuItem("WishGI/Step 2: Export Mesh Bake Data/Export ScriptableObject", false, 13)]
+        /// <summary>
+        /// 导出为 ScriptableObject 资产，便于在 Unity 内部调试和可视化检查。
+        /// </summary>
+        [MenuItem("GI/Step 2: Export Mesh Bake Data/Export ScriptableObject", false, 13)]
         public static void ExportScriptableObject()
         {
             var data = CollectBakeData();
@@ -65,7 +72,7 @@ namespace WishGI.Baking.Editor
             AssetDatabase.CreateAsset(asset, path);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log($"[WishGI] ScriptableObject 导出成功: {path}");
+            Debug.Log($"[GI] ScriptableObject 导出成功: {path}");
             Selection.activeObject = asset;
         }
 
@@ -92,13 +99,14 @@ namespace WishGI.Baking.Editor
 
                 // 判断是否贡献 GI 且接收模式不是仅探针
                 bool contributesGI = GameObjectUtility.AreStaticEditorFlagsSet(go, StaticEditorFlags.ContributeGI);
-                bool lightProbeOnly = mr.receiveGI == ReceiveGI.LightProbes; 
+                bool lightProbeOnly = mr.receiveGI == ReceiveGI.LightProbes;
+                // 仅导出真正由 Lightmap 驱动的静态对象；只接收探针的对象不进入离线烘焙。
                 if (!contributesGI || lightProbeOnly) continue;
 
                 // 读写支持检测
                 if (!mesh.isReadable)
                 {
-                    Debug.LogWarning($"[WishGI] Mesh 不可读 (需要在 Import Setting 勾选 Read/Write Enabled): {go.name}", go);
+                    Debug.LogWarning($"[GI] Mesh 不可读 (需要在 Import Setting 勾选 Read/Write Enabled): {go.name}", go);
                     continue;
                 }
 
@@ -106,7 +114,7 @@ namespace WishGI.Baking.Editor
                 var uv2 = mesh.uv2;
                 if (uv2 == null || uv2.Length == 0)
                 {
-                    Debug.LogWarning($"[WishGI] 缺少 UV2 (没有 Lightmap UV): {go.name}", go);
+                    Debug.LogWarning($"[GI] 缺少 UV2 (没有 Lightmap UV): {go.name}", go);
                 }
 
                 var verts = mesh.vertices;
@@ -137,7 +145,7 @@ namespace WishGI.Baking.Editor
                 result.meshObjects.Add(item);
             }
 
-            Debug.Log($"[WishGI] 收集完成，共有 {result.meshObjects.Count} 个有效进行光照烘焙的对象。");
+            Debug.Log($"[GI] 收集完成，共有 {result.meshObjects.Count} 个有效进行光照烘焙的对象。");
             return result;
         }
     }

@@ -10,6 +10,7 @@ static const float c4 = 0.1365685538240099;  // 0.5462742 * 0.25
 
 // Evaluate L=2 Spherical Harmonics with given coefficients and direction
 float3 EvalSH_L2(float3 coeffs0[9], float3 coeffs1[9], float w0, float w1, float3 dir) {
+    // dir 取表面法线方向，输出漫反射近似辐照度。
     float Y[9];
     Y[0] = c0;
     Y[1] = c1 * dir.y;
@@ -30,6 +31,8 @@ float3 EvalSH_L2(float3 coeffs0[9], float3 coeffs1[9], float w0, float w1, float
 }
 
 void WishGI_Custom_float_float(float3 normalWS, float4 assoc, UnityTexture2D probeMap, float probeCount, float texelsPerProbe, out float3 Out) {
+    // assoc.xyzw: [i0_norm, w0, i1_norm, w1]
+    // i0_norm / i1_norm 为 [0,1] 归一化索引，这里乘以 (probeCount-1) 反解。
     int i0 = (int)round(assoc.x * (probeCount - 1.0));
     int i1 = (int)round(assoc.z * (probeCount - 1.0));
     float w0 = assoc.y;
@@ -43,7 +46,8 @@ void WishGI_Custom_float_float(float3 normalWS, float4 assoc, UnityTexture2D pro
     float coeffs0_raw[28];
     float coeffs1_raw[28];
 
-    // Read texels for i0
+    // Read texels for i0。
+    // 用 texel center 采样（+0.5）并配合 Point 过滤，避免跨 probe 混色。
     int baseTexel0 = i0 * _TexelsPerProbe;
     for (int t0 = 0; t0 < _TexelsPerProbe; t0++) {
         float u = (baseTexel0 + t0 + 0.5) * invWidth;
@@ -67,7 +71,7 @@ void WishGI_Custom_float_float(float3 normalWS, float4 assoc, UnityTexture2D pro
         coeffs1_raw[basef + 3] = tex.a;
     }
 
-    // Unpack coeffs into array of 9 float3
+    // Unpack coeffs into array of 9 float3（L2 共 9 项）
     float3 coeffs0[9];
     float3 coeffs1[9];
     for (int i = 0; i < 9; i++) {

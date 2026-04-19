@@ -23,7 +23,10 @@ namespace WishGI.Baking.Editor
         // ────────────────────────────────────────────
         // 菜单入口
         // ────────────────────────────────────────────
-        [MenuItem("WishGI/Step 0: Generate UV2 For Scene Meshes", false, 10)]
+        [MenuItem("GI/Step 0: Generate UV2 For Scene Meshes", false, 10)]
+        /// <summary>
+        /// 扫描场景并为缺失 UV2 的可读网格批量生成 Secondary UV。
+        /// </summary>
         public static void GenerateUV2ForScene()
         {
             // 1. 收集场景中所有启用的 MeshFilter
@@ -34,7 +37,7 @@ namespace WishGI.Baking.Editor
 
             if (filters.Length == 0)
             {
-                Debug.LogWarning("[WishGI] 当前场景没有找到任何启用的 MeshFilter。");
+                Debug.LogWarning("[GI] 当前场景没有找到任何启用的 MeshFilter。");
                 return;
             }
 
@@ -73,7 +76,7 @@ namespace WishGI.Baking.Editor
                 if (!mesh.isReadable)
                 {
                     Debug.LogWarning(
-                        $"[WishGI] Mesh 不可读，无法生成 UV2，请启用 Read/Write Enabled: " +
+                        $"[GI] Mesh 不可读，无法生成 UV2，请启用 Read/Write Enabled: " +
                         $"{mf.gameObject.name} → {mesh.name}",
                         mf.gameObject
                     );
@@ -85,7 +88,7 @@ namespace WishGI.Baking.Editor
                 if (mesh.vertexCount == 0)
                 {
                     Debug.LogWarning(
-                        $"[WishGI] Mesh 无顶点，跳过: {mf.gameObject.name} → {mesh.name}",
+                        $"[GI] Mesh 无顶点，跳过: {mf.gameObject.name} → {mesh.name}",
                         mf.gameObject
                     );
                     skipped++;
@@ -116,7 +119,7 @@ namespace WishGI.Baking.Editor
 
             // ── 结果汇总 ──
             Debug.Log(
-                $"[WishGI] 完成！\n" +
+                $"[GI] 完成！\n" +
                 $"  已生成 UV2: {generated} 个 Mesh\n" +
                 $"  已有 UV2 (跳过): {alreadyHas} 个\n" +
                 $"  无法处理 (跳过): {skipped} 个"
@@ -152,7 +155,7 @@ namespace WishGI.Baking.Editor
             if (mesh.uv2 != null && mesh.uv2.Length > 0)
             {
                 Debug.Log(
-                    $"[WishGI] ✓ 已为 \"{objectName}\" 的 Mesh \"{mesh.name}\" " +
+                    $"[GI] ✓ 已为 \"{objectName}\" 的 Mesh \"{mesh.name}\" " +
                     $"生成 UV2 ({mesh.uv2.Length} 个 UV 坐标)",
                     mesh
                 );
@@ -160,7 +163,7 @@ namespace WishGI.Baking.Editor
             else
             {
                 Debug.LogError(
-                    $"[WishGI] ✗ 为 \"{objectName}\" 的 Mesh \"{mesh.name}\" " +
+                    $"[GI] ✗ 为 \"{objectName}\" 的 Mesh \"{mesh.name}\" " +
                     $"生成 UV2 失败，请检查 Mesh 数据是否完整。",
                     mesh
                 );

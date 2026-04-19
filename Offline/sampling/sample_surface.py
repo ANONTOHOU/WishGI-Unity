@@ -1,6 +1,6 @@
 """
-在三角形网格上使用蓝噪声（泊松圆盘）进行表面采样，再加上简单的直接光光线查询。输入严格遵循从 SceneLightExporter（灯光）和 MeshBakeExporter（网格几何）导出的 JSON 格式。
-使用方法（从仓库根目录）：
+在三角形网格上使用蓝噪声进行表面采样，再加上简单的直接光光线查询。输入严格遵循从 SceneLightExporter（灯光）和 MeshBakeExporter（网格几何）导出的 JSON 格式。
+使用方法：
 python Offline/sampling/sample_surface.py `
 --mesh-json Data/meshs/SampleScene_mesh.json `
 --scene-json Data/scenes/SampleScene_lights.json `
@@ -13,7 +13,7 @@ python Offline/sampling/sample_surface.py `
 --seed 42 `
 --dirs-out Data/samples/SampleScene_dirs.npy
 使用极简的 CPU 光线追踪器输出每个样本的位置/法线/三角形索引/重心坐标以及每个光源的可见度和辐照度估计值的 JSON 数据。
-依赖项：仅需 Python 标准库和 numpy。（无需外部光线追踪库。）
+依赖项：Python标准库、numpy
 """
 
 from __future__ import annotations
@@ -39,10 +39,15 @@ class Vec3:
 	z: float
 
 	def to_np(self) -> np.ndarray:
+		"""转换为 numpy 向量，便于后续几何与光照计算。"""
 		return np.array([self.x, self.y, self.z], dtype=np.float32)
 
 	@staticmethod
 	def from_dict(d: dict) -> "Vec3":
+		"""从 Unity 风格字典读取向量。
+
+		兼容 {x,y,z} 与 {r,g,b} 两种键，减少上下游格式耦合。
+		"""
 		# 支持 Unity JSON 导出的 {x,y,z} 和 {r,g,b} 风格的键。
 		if "x" in d:
 			return Vec3(float(d.get("x", 0.0)), float(d.get("y", 0.0)), float(d.get("z", 0.0)))
@@ -88,6 +93,7 @@ class Sample:
 
 
 def load_mesh_triangles(mesh_json: str) -> List[Triangle]:
+	"""读取网格 JSON 并展开为三角形列表。"""
 	with open(mesh_json, "r", encoding="utf-8") as f:
 		data = json.load(f)
 
@@ -109,6 +115,7 @@ def load_mesh_triangles(mesh_json: str) -> List[Triangle]:
 
 
 def load_lights(scene_json: str) -> List[Light]:
+	"""读取场景灯光 JSON 并转换为统一 Light 结构。"""
 	with open(scene_json, "r", encoding="utf-8") as f:
 		data = json.load(f)
 	lights: List[Light] = []
@@ -129,10 +136,11 @@ def load_lights(scene_json: str) -> List[Light]:
 	return lights
 
 
-# ----------------------------- 网格上的泊松圆盘采样 -----------------------------
+# ----------------------------- 网格上的蓝噪声泊松圆盘采样 -----------------------------
 
 
 def triangle_areas(tris: Sequence[Triangle]) -> np.ndarray:
+	"""计算每个三角形面积，用于按面积重要性采样。"""
 	areas = []
 	for tri in tris:
 		areas.append(0.5 * np.linalg.norm(np.cross(tri.v1 - tri.v0, tri.v2 - tri.v0)))
@@ -140,6 +148,7 @@ def triangle_areas(tris: Sequence[Triangle]) -> np.ndarray:
 
 
 def sample_point_on_triangle(tri: Triangle) -> Tuple[np.ndarray, Tuple[float, float, float]]:
+	"""在单个三角形上均匀采样点并返回重心坐标。"""
 	r1 = random.random()
 	r2 = random.random()
 	sqrt_r1 = math.sqrt(r1)
@@ -151,6 +160,7 @@ def sample_point_on_triangle(tri: Triangle) -> Tuple[np.ndarray, Tuple[float, fl
 
 
 def build_spatial_hash(samples: List[np.ndarray], cell_size: float):
+	"""构建简单空间哈希，用于加速最小距离检测。"""
 	grid = {}
 	for idx, p in enumerate(samples):
 		key = tuple((p / cell_size).astype(int))
@@ -159,6 +169,7 @@ def build_spatial_hash(samples: List[np.ndarray], cell_size: float):
 
 
 def is_far_enough(candidate: np.ndarray, samples: List[np.ndarray], grid, cell_size: float, min_dist: float) -> bool:
+	"""判断候选点是否满足蓝噪声泊松圆盘最小间距约束。"""
 	key = tuple((candidate / cell_size).astype(int))
 	for dx in (-1, 0, 1):
 		for dy in (-1, 0, 1):
@@ -173,6 +184,7 @@ def is_far_enough(candidate: np.ndarray, samples: List[np.ndarray], grid, cell_s
 
 
 def blue_noise_sample(tris: Sequence[Triangle], target_count: int, min_dist: float) -> List[Tuple[np.ndarray, Triangle, Tuple[float, float, float]]]:
+	"""在三角网格表面执行蓝噪声（泊松圆盘）采样。"""
 	areas = triangle_areas(tris)
 	cdf = np.cumsum(areas)
 	total_area = cdf[-1]
@@ -211,6 +223,7 @@ class BVHNode:
 
 
 def build_bvh(tris: List[Triangle], indices: Optional[List[int]] = None, depth: int = 0) -> BVHNode:
+	"""递归构建 BVH，加速遮挡和命中查询。"""
 	if indices is None:
 		indices = list(range(len(tris)))
 
@@ -238,6 +251,7 @@ def build_bvh(tris: List[Triangle], indices: Optional[List[int]] = None, depth: 
 
 
 def ray_aabb_intersect(orig, dir, bmin, bmax) -> bool:
+	"""射线与 AABB 求交测试。"""
 	inv = 1.0 / (dir + 1e-12)
 	t0 = (bmin - orig) * inv
 	t1 = (bmax - orig) * inv
@@ -247,6 +261,7 @@ def ray_aabb_intersect(orig, dir, bmin, bmax) -> bool:
 
 
 def ray_triangle_intersect(orig, dir, tri: Triangle, t_min=1e-4, t_max=1e9) -> Optional[float]:
+	"""Moller-Trumbore 射线三角形求交，返回参数 t。"""
 	v0, v1, v2 = tri.v0, tri.v1, tri.v2
 	e1 = v1 - v0
 	e2 = v2 - v0
@@ -270,10 +285,12 @@ def ray_triangle_intersect(orig, dir, tri: Triangle, t_min=1e-4, t_max=1e9) -> O
 
 
 def ray_triangle_intersect_closest(orig, dir, tri: Triangle, t_min=1e-4, t_max=1e9) -> Optional[float]:
+	"""与 ray_triangle_intersect 相同，保留独立函数名便于语义区分。"""
 	return ray_triangle_intersect(orig, dir, tri, t_min, t_max)
 
 
 def bvh_intersect(node: BVHNode, tris: List[Triangle], orig, dir, t_min=1e-4, t_max=1e9) -> bool:
+	"""返回是否存在任意遮挡命中。"""
 	if not ray_aabb_intersect(orig, dir, node.bounds_min, node.bounds_max):
 		return False
 	if node.left is None and node.right is None:
@@ -289,6 +306,7 @@ def bvh_intersect(node: BVHNode, tris: List[Triangle], orig, dir, t_min=1e-4, t_
 
 
 def bvh_first_hit(node: BVHNode, tris: List[Triangle], orig, dir, t_min=1e-4, t_max=1e9) -> Optional[Tuple[float, int]]:
+	"""返回最近命中点的 (t, tri_index)，若无命中则返回 None。"""
 	# 返回最近命中点的 (t, tri_index)，若无命中则返回 None。
 	if not ray_aabb_intersect(orig, dir, node.bounds_min, node.bounds_max):
 		return None
@@ -316,6 +334,7 @@ def bvh_first_hit(node: BVHNode, tris: List[Triangle], orig, dir, t_min=1e-4, t_
 
 
 def cosine_hemisphere_samples(num_dirs: int) -> np.ndarray:
+	"""生成一组余弦加权半球方向，用于离线多方向采样。"""
 	# 使用同心映射的分层余弦加权采样
 	out = []
 	m = int(math.sqrt(num_dirs))
@@ -347,6 +366,7 @@ def cosine_hemisphere_samples(num_dirs: int) -> np.ndarray:
 
 
 def sample_cosine_hemisphere() -> np.ndarray:
+	"""随机生成单个余弦加权半球方向。"""
 	# 在半球上生成单个随机余弦加权样本
 	u1 = random.random()
 	u2 = random.random()
@@ -359,6 +379,7 @@ def sample_cosine_hemisphere() -> np.ndarray:
 
 
 def orthonormal_basis(n: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+	"""根据法线构造切线-副切线正交基。"""
 	if abs(n[0]) > abs(n[2]):
 		tangent = np.array([-n[1], n[0], 0.0])
 	else:
@@ -369,11 +390,13 @@ def orthonormal_basis(n: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def world_from_tangent(normal: np.ndarray, local_dir: np.ndarray) -> np.ndarray:
+	"""将切线空间方向变换到世界空间。"""
 	t, b = orthonormal_basis(normal)
 	return local_dir[0] * t + local_dir[1] * b + local_dir[2] * normal
 
 
 def path_trace(pos: np.ndarray, normal: np.ndarray, view_dir_local: np.ndarray, lights: List[Light], bvh: BVHNode, tris: List[Triangle], max_bounces: int = 3, albedo: float = 0.8) -> np.ndarray:
+	"""简化路径追踪器，估计给定入射方向下的出射辐亮度。不考虑环境光贴图，每次bounce只考虑直接光。BRDF 固定为兰伯特反射，且不进行重要性采样。	"""
 	# 带有下一个事件估计（直接光线）和余弦采样的简单兰伯特路径追踪器。
 	throughput = np.array([albedo, albedo, albedo], dtype=np.float32)
 	radiance = np.zeros(3, dtype=np.float32)
@@ -416,6 +439,7 @@ def path_trace(pos: np.ndarray, normal: np.ndarray, view_dir_local: np.ndarray, 
 
 
 def compute_direct_lighting(sample: Sample, lights: List[Light], bvh: BVHNode, tris: List[Triangle]) -> None:
+	"""计算样本点对各灯光的可见性与直接辐照度。"""
 	pos = sample.position
 	n = sample.normal
 	vis_list = []
@@ -448,6 +472,7 @@ def compute_direct_lighting(sample: Sample, lights: List[Light], bvh: BVHNode, t
 
 
 def direct_radiance(pos: np.ndarray, normal: np.ndarray, lights: List[Light], bvh: BVHNode, tris: List[Triangle]) -> np.ndarray:
+	"""估计一个表面点的直接光辐亮度（RGB）。"""
 	# 返回表面点的 RGB 直接光照（兰伯特，无纹理），并进行阴影检查。
 	n = normal
 	radiance = np.zeros(3, dtype=np.float32)
@@ -479,31 +504,34 @@ def direct_radiance(pos: np.ndarray, normal: np.ndarray, lights: List[Light], bv
 
 
 def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: float, num_samples: int, num_dirs: int, max_bounces: int, albedo: float, seed: int, dirs_out: str | None):
+	"""执行离线采样主流程：采样点生成、路径追踪、写出 JSON。"""
 	# 固定种子，以便在 SH 拟合中采样、方向和路径追踪可重复
 	random.seed(seed)
 	np.random.seed(seed)
-	print(f"[WishGI] Loading mesh from {mesh_json}")
+	print(f"[GI] Loading mesh from {mesh_json}")
 	tris = load_mesh_triangles(mesh_json)
-	print(f"[WishGI] Triangles: {len(tris)}")
+	print(f"[GI] Triangles: {len(tris)}")
 
-	print(f"[WishGI] Loading lights from {scene_json}")
+	print(f"[GI] Loading lights from {scene_json}")
 	lights = load_lights(scene_json)
-	print(f"[WishGI] Lights: {len(lights)}")
+	print(f"[GI] Lights: {len(lights)}")
 
-	print(f"[WishGI] Building BVH for ray queries...")
+	print(f"[GI] Building BVH for ray queries...")
 	bvh = build_bvh(tris)
 
-	print(f"[WishGI] Blue-noise sampling on surface: target {num_samples}, minDist {min_dist}")
+	# min_dist 决定样本空间密度；num_samples 是目标上限，两者共同控制质量与耗时。
+	print(f"[GI] Blue-noise sampling on surface: target {num_samples}, minDist {min_dist}")
 	pts = blue_noise_sample(tris, target_count=num_samples, min_dist=min_dist)
-	print(f"[WishGI] Accepted samples: {len(pts)}")
+	print(f"[GI] Accepted samples: {len(pts)}")
 
-	print(f"[WishGI] Generating cosine-weighted directions: {num_dirs} (seed={seed})")
+	# num_dirs 决定每个采样点的方向分辨率；方向越多，SH 拟合数据越充分但成本更高。
+	print(f"[GI] Generating cosine-weighted directions: {num_dirs} (seed={seed})")
 	dirs_local = cosine_hemisphere_samples(num_dirs)
 	if dirs_out:
 		dirs_dir = os.path.dirname(dirs_out)
 		if dirs_dir:
 			os.makedirs(dirs_dir, exist_ok=True)
-		print(f"[WishGI] Saving directions -> {dirs_out}")
+		print(f"[GI] Saving directions -> {dirs_out}")
 		np.save(dirs_out, dirs_local.astype(np.float32))
 
 	samples: List[Sample] = []
@@ -512,7 +540,10 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 		compute_direct_lighting(s, lights, bvh, tris)
 		s.radiance_dirs = []  # 类型：忽略[属性已定义]
 
-		# 基于预先计算的局部方向集的路径追踪
+		# 基于预先计算的局部方向集路径追踪。
+		# max_bounces 与 albedo 的初始化是经验折中：
+		# - bounces=3 可覆盖基础间接光而不过度增加时长。
+		# - albedo=0.8 作为中性漫反射近似，避免过亮或过暗。
 		radiance_per_dir = []
 		for d_local in dirs_local:
 			radiance = path_trace(p, tri.normal, d_local, lights, bvh, tris, max_bounces=max_bounces, albedo=albedo)
@@ -523,7 +554,7 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 	out_dir = os.path.dirname(output_path)
 	if out_dir:
 		os.makedirs(out_dir, exist_ok=True)
-	print(f"[WishGI] Writing samples -> {output_path}")
+	print(f"[GI] Writing samples -> {output_path}")
 	out_data = {
 		"mesh": os.path.basename(mesh_json),
 		"scene": os.path.basename(scene_json),
@@ -550,13 +581,14 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 	}
 	with open(output_path, "w", encoding="utf-8") as f:
 		json.dump(out_data, f, indent=2)
-	print("[WishGI] Done.")
+	print("[GI] Done.")
 
 
 # ----------------------------- 命令行接口 -----------------------------
 
 
 def parse_args():
+	"""定义命令行参数。"""
 	parser = argparse.ArgumentParser(description="Surface blue-noise sampling + direct-light ray queries")
 	parser.add_argument("--mesh-json", required=True, help="Path to Data/meshs/<scene>_mesh.json")
 	parser.add_argument("--scene-json", required=True, help="Path to Data/scenes/<scene>_lights.json")
@@ -572,6 +604,7 @@ def parse_args():
 
 
 def main():
+	"""命令行入口。"""
 	args = parse_args()
 	run_sampling(
 		mesh_json=args.mesh_json,

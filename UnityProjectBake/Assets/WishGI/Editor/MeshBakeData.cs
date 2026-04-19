@@ -37,6 +37,11 @@ namespace WishGI.Baking
 
     public static class MatrixUtility
     {
+        /// <summary>
+        /// 将 Unity 的 Matrix4x4 展平为列主序 float[16]。
+        /// 之所以使用列主序，是为了与 Unity 内部矩阵存储习惯保持一致，
+        /// 便于后续离线侧按同一顺序还原。
+        /// </summary>
         public static float[] ToFloatArray(Matrix4x4 m)
         {
             return new float[]

@@ -14,9 +14,9 @@ python Offline/baking/pack_probes.py `
     --output-meta Data/probes/probe_map_meta.json
 
 纹理布局：
-- texels_per_probe = ceil((C*3)/4)。当 order=2（C=9）时，每个探针占 7 个 texel。
-- 每个探针的展平顺序为：[c0.r, c0.g, c0.b, c1.r, c1.g, c1.b, ...]，不足 4 浮点的块用 0 填充。
-- 第 p 个探针在 X 轴上占据区间 [p*texels_per_probe, (p+1)*texels_per_probe-1]，Y=0。
+texels_per_probe = ceil((C*3)/4)。当 order=2（C=9）时，每个探针占 7 个 texel。
+每个探针的展平顺序为：[c0.r, c0.g, c0.b, c1.r, c1.g, c1.b, ...]，不足 4 浮点的块用 0 填充。
+第 p 个探针在 X 轴上占据区间 [p*texels_per_probe, (p+1)*texels_per_probe-1]，Y=0。
 """
 
 from __future__ import annotations
@@ -31,6 +31,11 @@ import numpy as np
 
 
 def infer_order(num_basis: int) -> int:
+    """
+        根据基函数数量反推 SH 阶数。
+        例如：num_basis=9 时返回 order=2。
+        反推失败时抛错，避免错误的阶数进入后续打包流程。
+    """
     r = int(round(math.sqrt(num_basis)))
     if r * r != num_basis:
         raise ValueError(f"Cannot infer SH order from basis count={num_basis}")
@@ -76,6 +81,10 @@ def pack_coeffs_to_texture(coeffs: np.ndarray, order: int) -> Tuple[np.ndarray, 
 
 
 def parse_args():
+    """定义命令行参数。
+
+    参数命名与离线管线其它脚本保持一致，便于在工具链中拼接命令。
+    """
     parser = argparse.ArgumentParser(description="Pack probe SH coeffs into RGBA float texture strip (.npy)")
     parser.add_argument("--probes-npy", required=True, help="Path to probes_sh.npy from fit_sh.py (shape: P x C x 3)")
     parser.add_argument("--order", type=int, default=None, help="SH order; if omitted, inferred from C")
@@ -85,18 +94,24 @@ def parse_args():
 
 
 def main():
+    """脚本入口：读取系数、打包纹理并输出元数据。"""
     args = parse_args()
+
+    # probes_sh.npy 由 fit_sh.py 产生，约定形状为 (P, C, 3)。
     coeffs = np.load(args.probes_npy)
     if coeffs.ndim != 3:
         raise ValueError(f"Expected coeffs rank-3 (P,C,3); got {coeffs.shape}")
+    # 如果未显式传入 order，则根据基函数数自动推断，减少手工配置错误。
     num_basis = coeffs.shape[1]
     order = args.order if args.order is not None else infer_order(num_basis)
 
+    # 执行布局打包：把每个 probe 的 27 个浮点（L2）连续写入 RGBA 条带纹理。
     tex, meta = pack_coeffs_to_texture(coeffs, order)
 
     out_dir = os.path.dirname(args.output_tex)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
+    # 统一保存为 float32，匹配 Unity 侧 RGBAFloat 读取与内存预期。
     np.save(args.output_tex, tex.astype(np.float32))
     if args.output_meta:
         with open(args.output_meta, "w", encoding="utf-8") as f:

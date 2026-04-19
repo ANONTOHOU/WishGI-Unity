@@ -4,13 +4,17 @@ using UnityEngine;
 
 public class MeshAssociation : MonoBehaviour
 {
-    // Start is called before the first frame update
+    /// <summary>
+    /// 占位入口：预留给运行时网格关联管理逻辑。
+    /// </summary>
     void Start()
     {
         
     }
 
-    // Update is called once per frame
+    /// <summary>
+    /// 占位逐帧入口：当前无逻辑，保留以便后续扩展。
+    /// </summary>
     void Update()
     {
         

@@ -56,15 +56,18 @@ public class WishGIBakingTool : EditorWindow
     private string lastBakeOutputDir = "";
     private QualityPreset qualityPreset = QualityPreset.Low;
 
-    [MenuItem("WishGI/Baking Tool")]
+    [MenuItem("GI/Baking Tool")]
     public static void ShowWindow()
     {
-        GetWindow<WishGIBakingTool>("WishGI Baking Tool");
+        GetWindow<WishGIBakingTool>("GI Baking Tool");
     }
 
+    /// <summary>
+    /// 绘制烘焙工具窗口，分为“离线计算”和“回填 Unity”两步。
+    /// </summary>
     private void OnGUI()
     {
-        GUILayout.Label("WishGI Offline Baking (Python Pipeline)", EditorStyles.boldLabel);
+        GUILayout.Label("GI Offline Baking (Python Pipeline)", EditorStyles.boldLabel);
         EditorGUILayout.Space();
 
         string workspaceRoot = GetWorkspaceRoot();
@@ -94,7 +97,7 @@ public class WishGIBakingTool : EditorWindow
 
         EditorGUILayout.Space();
         pythonPath = EditorGUILayout.TextField("Python Command", pythonPath);
-        EditorGUILayout.HelpBox("High: 128 probes, 960 directions\nLow: 64 probes, 128 directions.\nOutputs will be auto-named based on Scene-Date-Count inside Data/probes/.", MessageType.Info);
+        EditorGUILayout.HelpBox("High: 128 probes, 960 directions\nLow: 64 probes, 128 directions.\n输出自动根据场景-日期-次数命名，目录在 Data/probes/.", MessageType.Info);
 
         GUILayout.FlexibleSpace();
 
@@ -116,12 +119,18 @@ public class WishGIBakingTool : EditorWindow
         }
     }
 
+    /// <summary>
+    /// 计算工作区根目录。
+    /// </summary>
     private string GetWorkspaceRoot()
     {
         // 向上两层，返回工作区根目录 D:\Programs\unity\WishGI-Unity
         return Path.GetFullPath(Path.Combine(Application.dataPath, "../..")).Replace('\\', '/');
     }
 
+    /// <summary>
+    /// 将绝对路径转为工作区相对路径，便于传给 Python 脚本。
+    /// </summary>
     private string GetWorkspaceRelativePath(string absPath, string workspaceRoot)
     {
         absPath = absPath.Replace('\\', '/');
@@ -132,6 +141,9 @@ public class WishGIBakingTool : EditorWindow
         return absPath; // 若位于工作区之外，则返回绝对路径
     }
 
+    /// <summary>
+    /// 执行离线烘焙四步流水线。
+    /// </summary>
     private void RunBakingPipeline()
     {
         string workspaceRoot = GetWorkspaceRoot();
@@ -140,11 +152,15 @@ public class WishGIBakingTool : EditorWindow
 
         if (!File.Exists(absMeshPath) || !File.Exists(absScenePath))
         {
-            UnityEngine.Debug.LogError("[WishGI] Input files not found. Please check paths.");
+            UnityEngine.Debug.LogError("[GI] Input files not found. Please check paths.");
             return;
         }
 
-        // 根据预设配置参数
+        // 根据预设配置参数。
+        // 这些值直接对应“速度/质量”权衡：
+        // - probes: 探针容量
+        // - dirs: 每采样点方向分辨率
+        // - samples: 表面采样密度上限
         int probes = 64;
         int dirs = 128;
         int samples = 256;
@@ -186,29 +202,32 @@ public class WishGIBakingTool : EditorWindow
 
         try
         {
-            EditorUtility.DisplayProgressBar("WishGI Baking Pipeline", "1/4 Surface Sampling & Raytracing...", 0.2f);
+            EditorUtility.DisplayProgressBar("GI Baking Pipeline", "1/4 Surface Sampling & Raytracing...", 0.2f);
+            // min-dist 固定为 0.05 作为当前项目经验值：密度足够，且耗时可控。
             RunPython(workspaceRoot, "Offline/sampling/sample_surface.py", 
                 $"--mesh-json \"{meshJsonPath}\" --scene-json \"{sceneJsonPath}\" --output \"{samplesOut}\" --min-dist 0.05 --num-samples {samples} --directions {dirs} --bounces 3 --albedo 0.8 --seed 42 --dirs-out \"{dirsOut}\"");
 
-            EditorUtility.DisplayProgressBar("WishGI Baking Pipeline", "2/4 Probe Clustering & Weights...", 0.45f);
+            EditorUtility.DisplayProgressBar("GI Baking Pipeline", "2/4 Probe Clustering & Weights...", 0.45f);
+            // top-k-sample=4 提高拟合稳定性；top-k-vertex=2 控制运行时顶点开销。
             RunPython(workspaceRoot, "Offline/export/export_probes.py", 
                 $"--samples-json \"{samplesOut}\" --mesh-json \"{meshJsonPath}\" --probes {probes} --top-k-sample 4 --top-k-vertex 2 --output-dir \"{outDir}\"");
 
-            EditorUtility.DisplayProgressBar("WishGI Baking Pipeline", "3/4 Solving SH Coefficients...", 0.7f);
+            EditorUtility.DisplayProgressBar("GI Baking Pipeline", "3/4 Solving SH Coefficients...", 0.7f);
+            // lambda-reg=0.1 与论文默认一致，避免过拟合并增强数值稳定性。
             RunPython(workspaceRoot, "Offline/baking/fit_sh.py", 
                 $"--samples-json \"{samplesOut}\" --sample-weights \"{outDir}/sample_weights.json\" --order 2 --lambda-reg 0.1 --output-npy \"{outDir}/probes_sh.npy\" --output-json \"{outDir}/probes_sh.json\" --dirs-npy \"{dirsOut}\"");
 
-            EditorUtility.DisplayProgressBar("WishGI Baking Pipeline", "4/4 Packing Probes to Texture...", 0.9f);
+            EditorUtility.DisplayProgressBar("GI Baking Pipeline", "4/4 Packing Probes to Texture...", 0.9f);
             RunPython(workspaceRoot, "Offline/baking/pack_probes.py", 
                 $"--probes-npy \"{outDir}/probes_sh.npy\" --order 2 --output-tex \"{outDir}/probe_map.npy\" --output-meta \"{outDir}/probe_map_meta.json\"");
 
             lastBakeOutputDir = Path.Combine(workspaceRoot, outDir).Replace('\\', '/');
 
-            UnityEngine.Debug.Log($"<color=#00FF00><b>[WishGI] Baking successful!</b></color>\nOutputs saved in: {outDir}");
+            UnityEngine.Debug.Log($"<color=#00FF00><b>[GI] Baking successful!</b></color>\nOutputs saved in: {outDir}");
         }
         catch (Exception e)
         {
-            UnityEngine.Debug.LogError($"[WishGI] Baking failed in pipeline.\n{e.Message}");
+            UnityEngine.Debug.LogError($"[GI] Baking failed in pipeline.\n{e.Message}");
         }
         finally
         {
@@ -216,6 +235,9 @@ public class WishGIBakingTool : EditorWindow
         }
     }
 
+    /// <summary>
+    /// 运行单个 Python 脚本，并在失败时抛出详细错误。
+    /// </summary>
     private void RunPython(string workingDir, string scriptPath, string args)
     {
         string arguments = $"\"{scriptPath}\" {args}";
@@ -243,6 +265,9 @@ public class WishGIBakingTool : EditorWindow
         }
     }
 
+    /// <summary>
+    /// 将离线产物导入 Unity：生成探针纹理并把关联写入场景网格 uv2。
+    /// </summary>
     private void ApplyBakeDataToUnity(string dataDir)
     {
         string npyPath = Path.Combine(dataDir, "probe_map.npy");
@@ -252,25 +277,25 @@ public class WishGIBakingTool : EditorWindow
 
         if (!File.Exists(npyPath) || !File.Exists(metaPath) || !File.Exists(assocPath))
         {
-            UnityEngine.Debug.LogError("[WishGI] Missing .npy, _meta.json, or mesh_assoc.json in the output directory!");
+            UnityEngine.Debug.LogError("[GI] Missing .npy, _meta.json, or mesh_assoc.json in the output directory!");
             return;
         }
 
         try
         {
-            EditorUtility.DisplayProgressBar("WishGI Apply", "Importing Texture...", 0.3f);
+            EditorUtility.DisplayProgressBar("GI Apply", "Importing Texture...", 0.3f);
             int probeCount = ImportProbeTexture(npyPath, metaPath, targetAssetPath);
 
             if (probeCount > 0)
             {
-                EditorUtility.DisplayProgressBar("WishGI Apply", "Applying UV2 to Meshes...", 0.6f);
+                EditorUtility.DisplayProgressBar("GI Apply", "Applying UV2 to Meshes...", 0.6f);
                 ApplyMeshAssocToAll(assocPath, probeCount);
-                UnityEngine.Debug.Log($"<color=#00FF00><b>[WishGI] Apply to Unity successful!</b></color>\nTexture built at: {targetAssetPath}\nuv2 injected into meshes.");
+                UnityEngine.Debug.Log($"<color=#00FF00><b>[GI] Apply to Unity successful!</b></color>\nTexture built at: {targetAssetPath}\nuv2 injected into meshes.");
             }
         }
         catch (Exception ex)
         {
-            UnityEngine.Debug.LogError($"[WishGI] Failed to apply data to Unity:\n{ex.Message}");
+            UnityEngine.Debug.LogError($"[GI] Failed to apply data to Unity:\n{ex.Message}");
         }
         finally
         {
@@ -278,6 +303,9 @@ public class WishGIBakingTool : EditorWindow
         }
     }
 
+    /// <summary>
+    /// 导入 probe_map.npy 为 Texture2D 资产，并返回探针数量。
+    /// </summary>
     private int ImportProbeTexture(string npy, string metaStr, string assetPath)
     {
         var meta = JsonUtility.FromJson<ProbeMapMeta>(File.ReadAllText(metaStr));
@@ -285,6 +313,7 @@ public class WishGIBakingTool : EditorWindow
         if (shape.Length != 3 || shape[0] != 1 || shape[1] != meta.width || shape[2] != 4)
             throw new Exception($"NPY shape mismatch: [{string.Join(",", shape)}]");
 
+        // RGBAFloat 与离线 float32 打包格式完全对应，避免量化误差。
         Texture2D tex = new Texture2D(meta.width, meta.height, TextureFormat.RGBAFloat, false, true);
         var colors = new Color[meta.width * meta.height];
         int idx = 0;
@@ -316,6 +345,9 @@ public class WishGIBakingTool : EditorWindow
         return meta.num_probes;
     }
 
+    /// <summary>
+    /// 将 mesh_assoc.json 关联应用到场景中所有匹配名称的 Mesh。
+    /// </summary>
     private void ApplyMeshAssocToAll(string assocPath, int probeCount)
     {
         string raw = File.ReadAllText(assocPath);
@@ -353,6 +385,7 @@ public class WishGIBakingTool : EditorWindow
                     if (v.probes != null && v.probes.Count > 0)
                     {
                         w0 = v.probes[0].w;
+                        // 将探针索引归一化写入 uv2，运行时按 probeCount 反解。
                         i0 = v.probes[0].id / (float)(probeCount - 1);
                         if (v.probes.Count > 1)
                         {
@@ -369,14 +402,17 @@ public class WishGIBakingTool : EditorWindow
             }
             else
             {
-                UnityEngine.Debug.LogWarning($"[WishGI] Could not find scene mesh mapped to name: {entry.mesh_name}");
+                UnityEngine.Debug.LogWarning($"[GI] Could not find scene mesh mapped to name: {entry.mesh_name}");
             }
         }
 
         AssetDatabase.SaveAssets();
-        UnityEngine.Debug.Log($"[WishGI] UV2 updated for {successCount} meshes.");
+        UnityEngine.Debug.Log($"[GI] UV2 updated for {successCount} meshes.");
     }
 
+    /// <summary>
+    /// 读取 .npy（float32）为展平数组。
+    /// </summary>
     private float[] ReadNpyFloat32(string path, out int[] shape)
     {
         using (var fs = File.OpenRead(path))

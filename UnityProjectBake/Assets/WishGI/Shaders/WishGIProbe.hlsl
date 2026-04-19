@@ -16,6 +16,7 @@ static const float c4 = 0.1365685538240099;
 
 inline void EvalSH9_L2(float3 dir, out float basis[9])
 {
+    // 与离线 sh_basis.py 完全一致的基函数排列，避免离线/运行时不匹配。
     dir = normalize(dir);
     basis[0] = c0;
     basis[1] = c1 * dir.y;
@@ -30,6 +31,7 @@ inline void EvalSH9_L2(float3 dir, out float basis[9])
 
 inline void FetchProbeCoeffs(TEXTURE2D_PARAM(probeTex, samplerProbeTex), float texelsPerProbe, float probeCount, int probeIndex, out float3 coeffs[9])
 {
+    // L2 阶固定 9 个系数，每个系数 RGB 三通道，共 27 个 float。
     const int floatsPerProbe = 27; // L2, 9 coeffs * RGB
     float width = max(1.0, probeCount * texelsPerProbe);
     float baseX = probeIndex * texelsPerProbe;
@@ -56,6 +58,7 @@ inline void FetchProbeCoeffs(TEXTURE2D_PARAM(probeTex, samplerProbeTex), float t
 
 inline float3 EvalProbe(TEXTURE2D_PARAM(probeTex, samplerProbeTex), float texelsPerProbe, float probeCount, int probeIndex, float3 dir)
 {
+    // 读取单个 probe 的 SH 系数并沿指定方向求值。
     float3 coeffs[9];
     FetchProbeCoeffs(probeTex, samplerProbeTex, texelsPerProbe, probeCount, probeIndex, coeffs);
     float basis[9];
@@ -67,6 +70,7 @@ inline float3 EvalProbe(TEXTURE2D_PARAM(probeTex, samplerProbeTex), float texels
 
 inline float3 SampleWishGI(TEXTURE2D_PARAM(probeTex, samplerProbeTex), float texelsPerProbe, float probeCount, float4 uv2, float3 normalWS)
 {
+    // uv2 编码约定：x,z 为归一化探针索引；y,w 为对应权重。
     int i0 = (int)round(uv2.x * (probeCount - 1));
     int i1 = (int)round(uv2.z * (probeCount - 1));
     float w0 = uv2.y;

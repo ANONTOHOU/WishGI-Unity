@@ -72,10 +72,15 @@ namespace WishGI.Editor
 
     public class SceneLightExporter : EditorWindow
     {
-        [MenuItem("WishGI/Step 1: Export Scene Lights to JSON", false, 11)]
+        /// <summary>
+        /// 导出当前场景灯光、环境光和网格实例信息到 JSON。
+        /// 该 JSON 会被离线采样器读取作为光照输入。
+        /// </summary>
+        [MenuItem("GI/Step 1: Export Scene Lights to JSON", false, 11)]
         public static void ExportLights()
         {
             var data = new SceneLightExportRoot();
+            // 场景名用于默认文件名，方便离线流程按场景组织产物。
             data.sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
             if (string.IsNullOrEmpty(data.sceneName)) data.sceneName = "UntitledScene";
 
@@ -98,11 +103,14 @@ namespace WishGI.Editor
             if (!string.IsNullOrEmpty(path))
             {
                 File.WriteAllText(path, json);
-                Debug.Log($"[WishGI] 成功导出 {data.lights.Count} 个光源及环境光信息到: {path}");
+                Debug.Log($"[GI] 成功导出 {data.lights.Count} 个光源及环境光信息到: {path}");
                 AssetDatabase.Refresh();
             }
         }
 
+        /// <summary>
+        /// 抓取 RenderSettings 中与环境光相关的数据。
+        /// </summary>
         private static AmbientExportData GetAmbientData()
         {
             var amb = new AmbientExportData();
@@ -131,6 +139,9 @@ namespace WishGI.Editor
             return amb;
         }
 
+        /// <summary>
+        /// 抓取场景中可见且启用的灯光参数。
+        /// </summary>
         private static List<LightExportData> GetLightsData()
         {
             var list = new List<LightExportData>();
@@ -164,6 +175,9 @@ namespace WishGI.Editor
             return list;
         }
 
+        /// <summary>
+        /// 导出场景网格实例的变换信息，便于离线定位与排查。
+        /// </summary>
         private static List<MeshInstanceData> GetMeshInstancesData()
         {
             var list = new List<MeshInstanceData>();

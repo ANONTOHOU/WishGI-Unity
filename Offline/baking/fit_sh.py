@@ -37,7 +37,14 @@ class SampleRadiance:
 	radiance: np.ndarray  # 形状：(num_dirs, 3)
 	normal: np.ndarray    # 形状：(3,)
 
+
 def load_samples(path: str) -> Tuple[List[SampleRadiance], np.ndarray | None, int]:
+	"""
+		读取采样结果，并提取每个采样点的逐方向辐亮度与法线。
+		samples: 每个采样点的辐亮度样本。
+		dirs_from_file: 若 JSON 内嵌了 dirsLocal，则返回其数组，否则为 None。
+		num_dirs: JSON 声明的方向数（用于一致性校验）。
+	"""
 	with open(path, "r", encoding="utf-8") as f:
 		data = json.load(f)
 	samples_json = data.get("samples", []) if isinstance(data, dict) else data
@@ -72,6 +79,10 @@ def load_samples(path: str) -> Tuple[List[SampleRadiance], np.ndarray | None, in
 
 
 def load_sample_weights(path: str) -> Tuple[Dict[int, List[Tuple[int, float]]], int, int]:
+	"""
+		读取 sample->probe 稀疏权重表。
+		返回的 weights_map 以 sample_id 为键，值为 [(probe_id, weight), ...]。
+	"""
 	with open(path, "r", encoding="utf-8") as f:
 		data = json.load(f)
 	weights_map: Dict[int, List[Tuple[int, float]]] = {}
@@ -87,6 +98,11 @@ def load_sample_weights(path: str) -> Tuple[Dict[int, List[Tuple[int, float]]], 
 
 
 def load_dirs(dirs_npy: str | None, dirs_from_samples: np.ndarray | None, expected: int) -> np.ndarray:
+	"""
+		加载方向集
+		1) --dirs-npy 显式传入
+		2) samples.json 中内嵌的 dirsLocal
+	"""
 	if dirs_npy:
 		dirs = np.asarray(np.load(dirs_npy), dtype=np.float64)
 	elif dirs_from_samples is not None:
@@ -103,6 +119,11 @@ def load_dirs(dirs_npy: str | None, dirs_from_samples: np.ndarray | None, expect
 
 
 def build_system(samples: List[SampleRadiance], weights: Dict[int, List[Tuple[int, float]]], dirs: np.ndarray, order: int, num_probes: int):
+	"""
+		构建 SH 线性回归系统 A*x=b
+		使用 max(0, dot(d, n)) 的半球权重，仅拟合法线半球方向。
+		将方向权重以 sqrt(w) 乘到 A 与 b 上，等价于加权最小二乘。
+	"""
 	num_dirs = dirs.shape[0]
 	C = num_sh_coeffs(order)
 	basis = eval_sh_basis(dirs, order)  # 形状：(D, C)
@@ -117,6 +138,7 @@ def build_system(samples: List[SampleRadiance], weights: Dict[int, List[Tuple[in
 		if s.radiance.shape[0] != num_dirs:
 			raise ValueError(f"Sample {s.sample_id} radiance dirs {s.radiance.shape[0]} != expected {num_dirs}")
 		
+		# 方向权重：强调靠近法线方向的拟合精度，抑制背面方向噪声。
 		w_d_array = np.maximum(0.0, dirs @ s.normal)
 		
 		for j in range(num_dirs):
@@ -138,6 +160,11 @@ def build_system(samples: List[SampleRadiance], weights: Dict[int, List[Tuple[in
 
 
 def save_outputs(coeffs: np.ndarray, order: int, output_npy: str, output_json: str | None):
+	"""
+		保存拟合后的 SH 系数。
+		npy: 作为后续 pack_probes.py 的机器可读输入。
+		json: 便于人工检查与调试。
+	"""
 	os.makedirs(os.path.dirname(output_npy), exist_ok=True)
 	np.save(output_npy, coeffs.astype(np.float32))
 	if output_json:
@@ -160,6 +187,7 @@ def save_outputs(coeffs: np.ndarray, order: int, output_npy: str, output_json: s
 
 
 def parse_args():
+	"""定义命令行参数。"""
 	parser = argparse.ArgumentParser(description="Fit SH coefficients for probes using sampled radiance and weights")
 	parser.add_argument("--samples-json", required=True, help="Path to samples JSON produced by sample_surface.py")
 	parser.add_argument("--sample-weights", required=True, help="Path to sample_weights.json from export_probes.py")
@@ -172,15 +200,21 @@ def parse_args():
 
 
 def main():
+	"""脚本入口：读取数据、构建系统、求解并落盘。"""
 	args = parse_args()
 
+	# samples 提供每个采样点的目标辐亮度；num_dirs_declared 用于与方向集做一致性检查。
 	samples, dirs_from_samples, num_dirs_declared = load_samples(args.samples_json)
+	# weights 提供 sample 到 probes 的稀疏混合关系，是构建 A 的核心结构。
 	weights, num_probes, top_k = load_sample_weights(args.sample_weights)
+	# 方向集决定 SH 基函数的采样点；若方向不一致会直接影响拟合正确性。
 	dirs = load_dirs(args.dirs_npy, dirs_from_samples, num_dirs_declared)
 
+	# 构建线性系统。order 决定系数维度 C=(order+1)^2。
 	A, b, C = build_system(samples, weights, dirs, args.order, num_probes)
 	print(f"[fit_sh] Rows={A.shape[0]}, Cols={A.shape[1]}, Probes={num_probes}, topK={top_k}, Order={args.order}, Lambda={args.lambda_reg}")
 
+	# lambda_reg 默认 0.1，平滑稳定化强度，兼顾拟合精度与抗噪性。
 	coeff_vec = solve_ridge(A, b, lambda_reg=args.lambda_reg)  # 形状：(P*C, 3)
 	coeffs = coeff_vec.reshape(num_probes, C, 3)
 	save_outputs(coeffs, args.order, args.output_npy, args.output_json)

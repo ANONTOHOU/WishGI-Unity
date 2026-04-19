@@ -14,12 +14,15 @@ public class UV2Inspector : EditorWindow
     private int probeCount = 128;
     private int sampleCount = 8;
 
-    [MenuItem("WishGI/UV2 Inspector")]
+    [MenuItem("GI/UV2 Inspector")]
     public static void ShowWindow()
     {
-        GetWindow<UV2Inspector>(true, "WishGI UV2 Inspector", true);
+        GetWindow<UV2Inspector>(true, "GI UV2 Inspector", true);
     }
 
+    /// <summary>
+    /// 绘制检查窗口，允许配置探针数量与打印样本数。
+    /// </summary>
     private void OnGUI()
     {
         mesh = (Mesh)EditorGUILayout.ObjectField("Mesh", mesh, typeof(Mesh), false);
@@ -32,6 +35,9 @@ public class UV2Inspector : EditorWindow
         }
     }
 
+    /// <summary>
+    /// 读取并解码 uv2 的探针索引/权重编码，输出统计信息。
+    /// </summary>
     private void Inspect()
     {
         if (mesh == null)
@@ -74,6 +80,7 @@ public class UV2Inspector : EditorWindow
 
             if (i < sampleCount)
             {
+                // uv2.x / uv2.z 存的是 [0,1] 归一化索引，需要用 (probeCount-1) 反归一化。
                 int i0 = Mathf.RoundToInt(u.x * (probeCount - 1));
                 int i1 = Mathf.RoundToInt(u.z * (probeCount - 1));
                 sb.AppendLine($"{i}: {u.x:F3} {u.z:F3} -> {i0} {i1} | {u.y:F3} {u.w:F3}");
