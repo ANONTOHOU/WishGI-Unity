@@ -59,15 +59,15 @@
     ],
     "meshInstances": [
         {
-            "objectName": "Tree",
-            "meshPath": "Assets/Tree.prefab",
+            "objectName": "Bar",
+            "meshPath": "Assets/Models/Bar.FBX",
             "position": {
-                "x": -2.0899999141693117,
+                "x": 0.4300000071525574,
                 "y": 0.0,
-                "z": -2.190000057220459
+                "z": 0.4000000059604645
             },
             "eulerAngles": {
-                "x": 0.0,
+                "x": 0.0000025044780613825425,
                 "y": 0.0,
                 "z": 0.0
             },
@@ -75,25 +75,6 @@
                 "x": 1.0,
                 "y": 1.0,
                 "z": 1.0
-            }
-        },
-        {
-            "objectName": "wishgiCapsule",
-            "meshPath": "Library/unity default resources",
-            "position": {
-                "x": -1.4500000476837159,
-                "y": 2.259999990463257,
-                "z": 1.4529999494552613
-            },
-            "eulerAngles": {
-                "x": 0.0,
-                "y": 80.79425811767578,
-                "z": 0.0
-            },
-            "scale": {
-                "x": 1.0000001192092896,
-                "y": 1.0,
-                "z": 1.0000001192092896
             }
         }
     ]

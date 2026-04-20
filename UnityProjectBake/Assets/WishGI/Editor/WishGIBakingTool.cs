@@ -162,7 +162,7 @@ public class WishGIBakingTool : EditorWindow
         // - dirs: 每采样点方向分辨率
         // - samples: 表面采样密度上限
         int probes = 64;
-        int dirs = 256;
+        int dirs = 128;
         int samples = 256;
         
         if (qualityPreset == QualityPreset.High)
@@ -359,24 +359,61 @@ public class WishGIBakingTool : EditorWindow
 
         // 扫描场景中所有 MeshFilter
         var filters = UnityEngine.Object.FindObjectsByType<MeshFilter>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        var goMap = new Dictionary<string, Mesh>();
+        var goMap = new Dictionary<string, MeshFilter>();
         foreach (var mf in filters)
         {
             if (mf.sharedMesh != null && !goMap.ContainsKey(mf.gameObject.name))
             {
-                // 以 GameObject 名称映射到 sharedMesh，因为导出器使用的是 go.name
-                goMap[mf.gameObject.name] = mf.sharedMesh;
+                // 以 GameObject 名称映射到 MeshFilter，因为需要回写 sharedMesh 引用。
+                goMap[mf.gameObject.name] = mf;
             }
         }
 
+        string bakedMeshFolder = "Assets/WishGI/Resources/BakedMeshes";
+        EnsureAssetFolder(bakedMeshFolder);
+
         int successCount = 0;
+        int replacedMeshCount = 0;
+        int probeDenom = Mathf.Max(probeCount - 1, 1);
 
         foreach (var entry in wrapper.items)
         {
-            if (goMap.TryGetValue(entry.mesh_name, out Mesh targetMesh))
+            if (goMap.TryGetValue(entry.mesh_name, out MeshFilter targetFilter))
             {
-                var uv2 = new List<Vector4>(targetMesh.vertexCount);
-                for (int i = 0; i < targetMesh.vertexCount; i++) uv2.Add(Vector4.zero);
+                Mesh meshToModify = targetFilter.sharedMesh;
+                if (meshToModify == null)
+                {
+                    continue;
+                }
+
+                string sourceAssetPath = AssetDatabase.GetAssetPath(meshToModify);
+                bool isImportedMesh = !string.IsNullOrEmpty(sourceAssetPath) &&
+                                      !sourceAssetPath.EndsWith(".asset", StringComparison.OrdinalIgnoreCase);
+
+                if (isImportedMesh)
+                {
+                    string safeName = SanitizeAssetName(entry.mesh_name);
+                    string bakedMeshPath = $"{bakedMeshFolder}/{safeName}_Baked.asset";
+                    Mesh bakedMesh = AssetDatabase.LoadAssetAtPath<Mesh>(bakedMeshPath);
+
+                    if (bakedMesh == null)
+                    {
+                        bakedMesh = UnityEngine.Object.Instantiate(meshToModify);
+                        bakedMesh.name = meshToModify.name + "_Baked";
+                        AssetDatabase.CreateAsset(bakedMesh, bakedMeshPath);
+                    }
+
+                    meshToModify = bakedMesh;
+                    if (targetFilter.sharedMesh != meshToModify)
+                    {
+                        targetFilter.sharedMesh = meshToModify;
+                        EditorUtility.SetDirty(targetFilter);
+                        replacedMeshCount++;
+                    }
+                }
+
+                var uv2 = new List<Vector4>(meshToModify.vertexCount);
+                for (int i = 0; i < meshToModify.vertexCount; i++) uv2.Add(Vector4.zero);
 
                 foreach (var v in entry.vertices)
                 {
@@ -386,18 +423,18 @@ public class WishGIBakingTool : EditorWindow
                     {
                         w0 = v.probes[0].w;
                         // 将探针索引归一化写入 uv2，运行时按 probeCount 反解。
-                        i0 = v.probes[0].id / (float)(probeCount - 1);
+                        i0 = v.probes[0].id / (float)probeDenom;
                         if (v.probes.Count > 1)
                         {
                             w1 = v.probes[1].w;
-                            i1 = v.probes[1].id / (float)(probeCount - 1);
+                            i1 = v.probes[1].id / (float)probeDenom;
                         }
                     }
                     uv2[v.vertex_id] = new Vector4(i0, w0, i1, w1);
                 }
 
-                targetMesh.SetUVs(1, uv2);
-                EditorUtility.SetDirty(targetMesh);
+                meshToModify.SetUVs(1, uv2);
+                EditorUtility.SetDirty(meshToModify);
                 successCount++;
             }
             else
@@ -407,7 +444,52 @@ public class WishGIBakingTool : EditorWindow
         }
 
         AssetDatabase.SaveAssets();
-        UnityEngine.Debug.Log($"[GI] UV2 updated for {successCount} meshes.");
+        if (replacedMeshCount > 0)
+        {
+            var currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(currentScene);
+        }
+
+        UnityEngine.Debug.Log($"[GI] UV2 updated for {successCount} meshes. Persistent mesh replacements: {replacedMeshCount}.");
+    }
+
+    /// <summary>
+    /// 确保 Asset 文件夹存在（例如 Assets/WishGI/Resources/BakedMeshes）。
+    /// </summary>
+    private void EnsureAssetFolder(string folderPath)
+    {
+        folderPath = folderPath.Replace('\\', '/');
+        if (folderPath == "Assets" || AssetDatabase.IsValidFolder(folderPath))
+        {
+            return;
+        }
+
+        string parent = Path.GetDirectoryName(folderPath)?.Replace('\\', '/');
+        if (string.IsNullOrEmpty(parent))
+        {
+            throw new Exception($"Invalid asset folder path: {folderPath}");
+        }
+
+        EnsureAssetFolder(parent);
+        AssetDatabase.CreateFolder(parent, Path.GetFileName(folderPath));
+    }
+
+    /// <summary>
+    /// 清洗文件名，避免写入非法字符导致资产创建失败。
+    /// </summary>
+    private string SanitizeAssetName(string rawName)
+    {
+        if (string.IsNullOrWhiteSpace(rawName))
+        {
+            return "Mesh";
+        }
+
+        StringBuilder sb = new StringBuilder(rawName.Length);
+        foreach (char c in rawName)
+        {
+            sb.Append(char.IsLetterOrDigit(c) || c == '_' || c == '-' ? c : '_');
+        }
+        return sb.ToString();
     }
 
     /// <summary>
