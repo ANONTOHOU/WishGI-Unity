@@ -162,14 +162,14 @@ public class WishGIBakingTool : EditorWindow
         // - dirs: 每采样点方向分辨率
         // - samples: 表面采样密度上限
         int probes = 64;
-        int dirs = 128;
+        int dirs = 256;
         int samples = 256;
         
         if (qualityPreset == QualityPreset.High)
         {
             probes = 128;
-            dirs = 960;
-            samples = 1024;
+            dirs = 512;
+            samples = 512;
         }
 
         // 自动命名（Scene_Date_Count）

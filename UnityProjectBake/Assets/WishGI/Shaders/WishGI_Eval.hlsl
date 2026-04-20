@@ -1,14 +1,14 @@
 #ifndef WISHGI_EVAL_INCLUDED
 #define WISHGI_EVAL_INCLUDED
 
-// SH basis constants for L=2 (pre-multiplied by cosine convolution A_l / pi for diffuse irradiance)
+// L=2（数学上三阶） 时 SH 基本常量（已乘以漫射辐照度的余弦卷积 A_l / π）
 static const float c0 = 0.28209479177387814;
 static const float c1 = 0.32573500793527993; // 0.4886025 * (2/3)
 static const float c2 = 0.2731371076480198;  // 1.0925484 * 0.25
 static const float c3 = 0.07884789131313001; // 0.3153915 * 0.25
 static const float c4 = 0.1365685538240099;  // 0.5462742 * 0.25
 
-// Evaluate L=2 Spherical Harmonics with given coefficients and direction
+// 计算给定系数和方向的 L=2 球谐函数
 float3 EvalSH_L2(float3 coeffs0[9], float3 coeffs1[9], float w0, float w1, float3 dir) {
     // dir 取表面法线方向，输出漫反射近似辐照度。
     float Y[9];
@@ -27,7 +27,7 @@ float3 EvalSH_L2(float3 coeffs0[9], float3 coeffs1[9], float w0, float w1, float
         float3 combinedCoeffs = w0 * coeffs0[i] + w1 * coeffs1[i];
         col += combinedCoeffs * Y[i];
     }
-    return max(col, 0.0); // Prevent negative lights
+    return max(col, 0.0); // 防止为负
 }
 
 void WishGI_Custom_float_float(float3 normalWS, float4 assoc, UnityTexture2D probeMap, float probeCount, float texelsPerProbe, out float3 Out) {
@@ -46,7 +46,7 @@ void WishGI_Custom_float_float(float3 normalWS, float4 assoc, UnityTexture2D pro
     float coeffs0_raw[28];
     float coeffs1_raw[28];
 
-    // Read texels for i0。
+    // 读取 i0 的 texels。
     // 用 texel center 采样（+0.5）并配合 Point 过滤，避免跨 probe 混色。
     int baseTexel0 = i0 * _TexelsPerProbe;
     for (int t0 = 0; t0 < _TexelsPerProbe; t0++) {
@@ -59,7 +59,7 @@ void WishGI_Custom_float_float(float3 normalWS, float4 assoc, UnityTexture2D pro
         coeffs0_raw[basef + 3] = tex.a;
     }
 
-    // Read texels for i1
+    // 读取 i1 的 texels。
     int baseTexel1 = i1 * _TexelsPerProbe;
     for (int t1 = 0; t1 < _TexelsPerProbe; t1++) {
         float u = (baseTexel1 + t1 + 0.5) * invWidth;
@@ -71,7 +71,7 @@ void WishGI_Custom_float_float(float3 normalWS, float4 assoc, UnityTexture2D pro
         coeffs1_raw[basef + 3] = tex.a;
     }
 
-    // Unpack coeffs into array of 9 float3（L2 共 9 项）
+    // 将系数解包到 9 个 float3 的数组中（L2 共 9 项）
     float3 coeffs0[9];
     float3 coeffs1[9];
     for (int i = 0; i < 9; i++) {

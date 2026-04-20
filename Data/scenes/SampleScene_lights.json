@@ -59,22 +59,22 @@
     ],
     "meshInstances": [
         {
-            "objectName": "wishgiCylinder",
-            "meshPath": "Library/unity default resources",
+            "objectName": "Tree",
+            "meshPath": "Assets/Tree.prefab",
             "position": {
-                "x": -1.7890000343322755,
-                "y": 1.4700000286102296,
-                "z": -1.9950000047683716
+                "x": -2.0899999141693117,
+                "y": 0.0,
+                "z": -2.190000057220459
             },
             "eulerAngles": {
                 "x": 0.0,
-                "y": 258.1379699707031,
+                "y": 0.0,
                 "z": 0.0
             },
             "scale": {
-                "x": 1.0000004768371583,
+                "x": 1.0,
                 "y": 1.0,
-                "z": 1.0000004768371583
+                "z": 1.0
             }
         },
         {

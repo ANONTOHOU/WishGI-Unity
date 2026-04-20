@@ -48,7 +48,7 @@ Shader "WishGI/UnlitProbe"
                 VertexPositionInputs posInputs = GetVertexPositionInputs(IN.positionOS.xyz);
                 OUT.positionCS = posInputs.positionCS;
                 OUT.normalWS = TransformObjectToWorldNormal(IN.normalOS);
-                // 在顶点阶段评估 GI，减少片元阶段负担，符合 WishGI 的轻量化目标。
+                // 在顶点阶段评估 GI，减少片元阶段负担。
                 OUT.giColor = SampleWishGI(TEXTURE2D_ARGS(_ProbeMap, sampler_ProbeMap), _TexelsPerProbe, _ProbeCount, IN.uv2, OUT.normalWS);
                 return OUT;
             }
