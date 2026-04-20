@@ -47,7 +47,17 @@ public class WishGIBakingTool : EditorWindow
     public enum QualityPreset
     {
         Low,       // 64 个探针，128 个方向，256 个采样点
-        High       // 128 个探针，960 个方向，1024 个采样点
+        High,      // 128 个探针，512 个方向，512 个采样点
+        Custom
+    }
+
+    private struct TimeEstimate
+    {
+        public float step1Sec;
+        public float step2Sec;
+        public float step3Sec;
+        public float step4Sec;
+        public float totalSec;
     }
 
     private string meshJsonPath = "Data/meshs/SampleScene_mesh.json";
@@ -55,6 +65,21 @@ public class WishGIBakingTool : EditorWindow
     private string pythonPath = "python";
     private string lastBakeOutputDir = "";
     private QualityPreset qualityPreset = QualityPreset.Low;
+
+    private int customProbes = 96;
+    private int customDirections = 256;
+    private int customSamples = 384;
+
+    private int seed = 42;
+    private float minDist = 0.05f;
+    private int bounces = 3;
+    private float defaultAlbedo = 0.8f;
+    private int topKSample = 4;
+    private int topKVertex = 2;
+    private int shOrder = 2;
+    private float lambdaReg = 0.1f;
+
+    private const string TimeCalibrationKey = "WishGI.BakeTimeCalibration";
 
     [MenuItem("GI/Baking Tool")]
     public static void ShowWindow()
@@ -95,15 +120,69 @@ public class WishGIBakingTool : EditorWindow
         EditorGUILayout.Space();
         qualityPreset = (QualityPreset)EditorGUILayout.EnumPopup("Quality Preset", qualityPreset);
 
+        int probes;
+        int dirs;
+        int samples;
+        ResolveEffectiveQuality(out probes, out dirs, out samples);
+
+        if (qualityPreset == QualityPreset.Custom)
+        {
+            customProbes = EditorGUILayout.IntField("Probes", customProbes);
+            customDirections = EditorGUILayout.IntField("Directions", customDirections);
+            customSamples = EditorGUILayout.IntField("Samples", customSamples);
+            ResolveEffectiveQuality(out probes, out dirs, out samples);
+        }
+        else
+        {
+            EditorGUILayout.LabelField("Probes", probes.ToString());
+            EditorGUILayout.LabelField("Directions", dirs.ToString());
+            EditorGUILayout.LabelField("Samples", samples.ToString());
+        }
+
+        EditorGUILayout.Space();
+        GUILayout.Label("Shared Parameters", EditorStyles.boldLabel);
+        seed = EditorGUILayout.IntField("Seed", seed);
+        minDist = EditorGUILayout.FloatField("Min Dist", minDist);
+        bounces = EditorGUILayout.IntField("Bounces", bounces);
+        defaultAlbedo = EditorGUILayout.Slider("Default Albedo", defaultAlbedo, 0.0f, 1.0f);
+        topKSample = EditorGUILayout.IntField("Top K Sample", topKSample);
+        topKVertex = EditorGUILayout.IntField("Top K Vertex", topKVertex);
+        shOrder = EditorGUILayout.IntSlider("SH Order", shOrder, 0, 2);
+        lambdaReg = EditorGUILayout.FloatField("Lambda Reg", lambdaReg);
+
+        string validationError;
+        bool valid = ValidateParameters(probes, dirs, samples, out validationError);
+        if (!valid)
+        {
+            EditorGUILayout.HelpBox(validationError, MessageType.Error);
+        }
+        else if (samples * dirs > 450000)
+        {
+            EditorGUILayout.HelpBox("当前参数组合较重，预计耗时会显著上升。", MessageType.Warning);
+        }
+
+        TimeEstimate estimate = EstimateBakeTime(probes, dirs, samples);
+        EditorGUILayout.HelpBox(
+            $"Estimated Time: {FormatSeconds(estimate.totalSec)}\n" +
+            $"S1 Sampling: {FormatSeconds(estimate.step1Sec)}\n" +
+            $"S2 Probe Export: {FormatSeconds(estimate.step2Sec)}\n" +
+            $"S3 SH Fit: {FormatSeconds(estimate.step3Sec)}\n" +
+            $"S4 Pack: {FormatSeconds(estimate.step4Sec)}",
+            MessageType.Info
+        );
+
         EditorGUILayout.Space();
         pythonPath = EditorGUILayout.TextField("Python Command", pythonPath);
-        EditorGUILayout.HelpBox("High: 128 probes, 960 directions\nLow: 64 probes, 128 directions.\n输出自动根据场景-日期-次数命名，目录在 Data/probes/.", MessageType.Info);
+        EditorGUILayout.HelpBox("High: 128 probes, 512 directions, 512 samples\nLow: 64 probes, 128 directions, 256 samples\nCustom: 由你手动指定 probes/directions/samples。\n输出自动根据场景-日期-次数命名，目录在 Data/probes/.", MessageType.Info);
 
         GUILayout.FlexibleSpace();
 
-        if (GUILayout.Button("1. Run Python Baking!", GUILayout.Height(40)))
+        using (new EditorGUI.DisabledScope(!valid))
         {
-            RunBakingPipeline();
+            if (GUILayout.Button("1. Run Python Baking!", GUILayout.Height(40)))
+            {
+                RunBakingPipeline();
+            }
         }
         
         EditorGUILayout.Space();
@@ -156,20 +235,16 @@ public class WishGIBakingTool : EditorWindow
             return;
         }
 
-        // 根据预设配置参数。
-        // 这些值直接对应“速度/质量”权衡：
-        // - probes: 探针容量
-        // - dirs: 每采样点方向分辨率
-        // - samples: 表面采样密度上限
-        int probes = 64;
-        int dirs = 128;
-        int samples = 256;
-        
-        if (qualityPreset == QualityPreset.High)
+        int probes;
+        int dirs;
+        int samples;
+        ResolveEffectiveQuality(out probes, out dirs, out samples);
+
+        string validationError;
+        if (!ValidateParameters(probes, dirs, samples, out validationError))
         {
-            probes = 128;
-            dirs = 512;
-            samples = 512;
+            UnityEngine.Debug.LogError($"[GI] Invalid parameters: {validationError}");
+            return;
         }
 
         // 自动命名（Scene_Date_Count）
@@ -202,28 +277,47 @@ public class WishGIBakingTool : EditorWindow
 
         try
         {
+            Stopwatch totalTimer = Stopwatch.StartNew();
+            float step1Sec = 0.0f;
+            float step2Sec = 0.0f;
+            float step3Sec = 0.0f;
+            float step4Sec = 0.0f;
+
+            Stopwatch stepTimer = Stopwatch.StartNew();
             EditorUtility.DisplayProgressBar("GI Baking Pipeline", "1/4 Surface Sampling & Raytracing...", 0.2f);
-            // min-dist 固定为 0.05 作为当前项目经验值：密度足够，且耗时可控。
+            // 路径仍由现有机制控制，参数统一来自本工具 UI。
             RunPython(workspaceRoot, "Offline/sampling/sample_surface.py", 
-                $"--mesh-json \"{meshJsonPath}\" --scene-json \"{sceneJsonPath}\" --output \"{samplesOut}\" --min-dist 0.05 --num-samples {samples} --directions {dirs} --bounces 3 --albedo 0.8 --seed 42 --dirs-out \"{dirsOut}\"");
+                $"--mesh-json \"{meshJsonPath}\" --scene-json \"{sceneJsonPath}\" --output \"{samplesOut}\" --min-dist {minDist} --num-samples {samples} --directions {dirs} --bounces {bounces} --default-albedo {defaultAlbedo} --seed {seed} --dirs-out \"{dirsOut}\"");
+            step1Sec = (float)stepTimer.Elapsed.TotalSeconds;
 
+            stepTimer.Restart();
             EditorUtility.DisplayProgressBar("GI Baking Pipeline", "2/4 Probe Clustering & Weights...", 0.45f);
-            // top-k-sample=4 提高拟合稳定性；top-k-vertex=2 控制运行时顶点开销。
             RunPython(workspaceRoot, "Offline/export/export_probes.py", 
-                $"--samples-json \"{samplesOut}\" --mesh-json \"{meshJsonPath}\" --probes {probes} --top-k-sample 4 --top-k-vertex 2 --output-dir \"{outDir}\"");
+                $"--samples-json \"{samplesOut}\" --mesh-json \"{meshJsonPath}\" --probes {probes} --top-k-sample {topKSample} --top-k-vertex {topKVertex} --output-dir \"{outDir}\" --seed {seed}");
+            step2Sec = (float)stepTimer.Elapsed.TotalSeconds;
 
+            stepTimer.Restart();
             EditorUtility.DisplayProgressBar("GI Baking Pipeline", "3/4 Solving SH Coefficients...", 0.7f);
-            // lambda-reg=0.1 与论文默认一致，避免过拟合并增强数值稳定性。
             RunPython(workspaceRoot, "Offline/baking/fit_sh.py", 
-                $"--samples-json \"{samplesOut}\" --sample-weights \"{outDir}/sample_weights.json\" --order 2 --lambda-reg 0.1 --output-npy \"{outDir}/probes_sh.npy\" --output-json \"{outDir}/probes_sh.json\" --dirs-npy \"{dirsOut}\"");
+                $"--samples-json \"{samplesOut}\" --sample-weights \"{outDir}/sample_weights.json\" --order {shOrder} --lambda-reg {lambdaReg} --output-npy \"{outDir}/probes_sh.npy\" --output-json \"{outDir}/probes_sh.json\" --dirs-npy \"{dirsOut}\"");
+            step3Sec = (float)stepTimer.Elapsed.TotalSeconds;
 
+            stepTimer.Restart();
             EditorUtility.DisplayProgressBar("GI Baking Pipeline", "4/4 Packing Probes to Texture...", 0.9f);
             RunPython(workspaceRoot, "Offline/baking/pack_probes.py", 
-                $"--probes-npy \"{outDir}/probes_sh.npy\" --order 2 --output-tex \"{outDir}/probe_map.npy\" --output-meta \"{outDir}/probe_map_meta.json\"");
+                $"--probes-npy \"{outDir}/probes_sh.npy\" --order {shOrder} --output-tex \"{outDir}/probe_map.npy\" --output-meta \"{outDir}/probe_map_meta.json\"");
+            step4Sec = (float)stepTimer.Elapsed.TotalSeconds;
 
             lastBakeOutputDir = Path.Combine(workspaceRoot, outDir).Replace('\\', '/');
+            totalTimer.Stop();
+            UpdateTimeCalibration(probes, dirs, samples, step1Sec + step2Sec + step3Sec + step4Sec);
 
-            UnityEngine.Debug.Log($"<color=#00FF00><b>[GI] Baking successful!</b></color>\nOutputs saved in: {outDir}");
+            UnityEngine.Debug.Log(
+                $"<color=#00FF00><b>[GI] Baking successful!</b></color>\n" +
+                $"Outputs saved in: {outDir}\n" +
+                $"Actual Time: {FormatSeconds((float)totalTimer.Elapsed.TotalSeconds)}\n" +
+                $"S1={FormatSeconds(step1Sec)}, S2={FormatSeconds(step2Sec)}, S3={FormatSeconds(step3Sec)}, S4={FormatSeconds(step4Sec)}"
+            );
         }
         catch (Exception e)
         {
@@ -490,6 +584,147 @@ public class WishGIBakingTool : EditorWindow
             sb.Append(char.IsLetterOrDigit(c) || c == '_' || c == '-' ? c : '_');
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// 根据预设或自定义设置解析实际的 probes / directions / samples。
+    /// </summary>
+    private void ResolveEffectiveQuality(out int probes, out int dirs, out int samples)
+    {
+        probes = 64;
+        dirs = 128;
+        samples = 256;
+
+        if (qualityPreset == QualityPreset.High)
+        {
+            probes = 128;
+            dirs = 512;
+            samples = 512;
+        }
+        else if (qualityPreset == QualityPreset.Custom)
+        {
+            probes = customProbes;
+            dirs = customDirections;
+            samples = customSamples;
+        }
+    }
+
+    /// <summary>
+    /// 对参数做基本合法性检查，防止明显错误输入。
+    /// </summary>
+    private bool ValidateParameters(int probes, int dirs, int samples, out string error)
+    {
+        if (probes <= 0)
+        {
+            error = "Probes must be > 0.";
+            return false;
+        }
+        if (dirs <= 0)
+        {
+            error = "Directions must be > 0.";
+            return false;
+        }
+        if (samples <= 0)
+        {
+            error = "Samples must be > 0.";
+            return false;
+        }
+        if (seed < 0)
+        {
+            error = "Seed must be >= 0.";
+            return false;
+        }
+        if (minDist <= 0.0f)
+        {
+            error = "Min Dist must be > 0.";
+            return false;
+        }
+        if (bounces < 1)
+        {
+            error = "Bounces must be >= 1.";
+            return false;
+        }
+        if (defaultAlbedo < 0.0f || defaultAlbedo > 1.0f)
+        {
+            error = "Default Albedo must be in [0,1].";
+            return false;
+        }
+        if (topKSample <= 0 || topKVertex <= 0)
+        {
+            error = "Top-K values must be > 0.";
+            return false;
+        }
+        if (shOrder < 0 || shOrder > 2)
+        {
+            error = "SH Order must be in [0,2].";
+            return false;
+        }
+        if (lambdaReg < 0.0f)
+        {
+            error = "Lambda Reg must be >= 0.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// 估算四个离线步骤耗时。采用简单经验模型并可通过历史运行进行校准。
+    /// </summary>
+    private TimeEstimate EstimateBakeTime(int probes, int dirs, int samples)
+    {
+        float rawS1 = samples * dirs * Mathf.Max(1, bounces) * 0.00035f;
+        float rawS2 = samples * probes * 0.00008f;
+        float rawS3 = samples * dirs * 0.00005f + probes * probes * 0.0015f;
+        float rawS4 = probes * 0.02f;
+
+        float calib = EditorPrefs.GetFloat(TimeCalibrationKey, 1.0f);
+        calib = Mathf.Clamp(calib, 0.25f, 4.0f);
+
+        TimeEstimate t;
+        t.step1Sec = rawS1 * calib;
+        t.step2Sec = rawS2 * calib;
+        t.step3Sec = rawS3 * calib;
+        t.step4Sec = rawS4 * calib;
+        t.totalSec = t.step1Sec + t.step2Sec + t.step3Sec + t.step4Sec;
+        return t;
+    }
+
+    /// <summary>
+    /// 使用本次真实耗时更新估时校准系数。
+    /// </summary>
+    private void UpdateTimeCalibration(int probes, int dirs, int samples, float actualTotalSec)
+    {
+        float rawS1 = samples * dirs * Mathf.Max(1, bounces) * 0.00035f;
+        float rawS2 = samples * probes * 0.00008f;
+        float rawS3 = samples * dirs * 0.00005f + probes * probes * 0.0015f;
+        float rawS4 = probes * 0.02f;
+        float rawTotal = Mathf.Max(1.0f, rawS1 + rawS2 + rawS3 + rawS4);
+
+        float measured = Mathf.Max(1.0f, actualTotalSec);
+        float targetCalib = Mathf.Clamp(measured / rawTotal, 0.25f, 4.0f);
+        float oldCalib = Mathf.Clamp(EditorPrefs.GetFloat(TimeCalibrationKey, 1.0f), 0.25f, 4.0f);
+        float newCalib = Mathf.Lerp(oldCalib, targetCalib, 0.35f);
+        EditorPrefs.SetFloat(TimeCalibrationKey, newCalib);
+    }
+
+    /// <summary>
+    /// 将秒数格式化为可读时长。
+    /// </summary>
+    private string FormatSeconds(float sec)
+    {
+        sec = Mathf.Max(0.0f, sec);
+        TimeSpan ts = TimeSpan.FromSeconds(sec);
+        if (ts.TotalHours >= 1.0)
+        {
+            return $"{(int)ts.TotalHours}h {ts.Minutes}m {ts.Seconds}s";
+        }
+        if (ts.TotalMinutes >= 1.0)
+        {
+            return $"{ts.Minutes}m {ts.Seconds}s";
+        }
+        return $"{ts.Seconds}s";
     }
 
     /// <summary>
