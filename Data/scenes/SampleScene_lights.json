@@ -60,7 +60,7 @@
     "meshInstances": [
         {
             "objectName": "Bar",
-            "meshPath": "Assets/Models/Bar.FBX",
+            "meshPath": "Assets/WishGI/Resources/BakedMeshes/Bar_Baked.asset",
             "position": {
                 "x": 0.4300000071525574,
                 "y": 0.0,

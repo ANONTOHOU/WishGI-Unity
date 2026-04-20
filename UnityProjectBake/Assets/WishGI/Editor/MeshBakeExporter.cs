@@ -79,7 +79,7 @@ namespace WishGI.Baking.Editor
         /// <summary>
         /// 收集需要参与烘焙的数据：
         /// - 过滤有效的 MeshRenderer
-        /// - 获取世界空间顶点法线以及 UV2 信息
+        /// - 获取世界空间顶点法线、UV0/UV2 与材质反射率信息
         /// </summary>
         private static MeshBakeDataJson CollectBakeData()
         {
@@ -119,7 +119,68 @@ namespace WishGI.Baking.Editor
 
                 var verts = mesh.vertices;
                 var norms = mesh.normals;
-                var indices = mesh.triangles;
+
+                var uv0 = mesh.uv;
+                if (uv0 == null || uv0.Length == 0)
+                {
+                    uv0 = new Vector2[verts.Length];
+                    Debug.LogWarning($"[GI] 缺少 UV0 (BaseMap 采样将回退到 BaseColor/默认值): {go.name}", go);
+                }
+
+                var allIndices = new List<int>(mesh.triangles.Length);
+                var triangleMaterialIds = new List<int>(mesh.triangles.Length / 3);
+                int subMeshCount = mesh.subMeshCount;
+
+                // 用 submesh 保留“每个三角面对应哪个材质槽位”的信息。
+                for (int sub = 0; sub < subMeshCount; sub++)
+                {
+                    int[] subIndices = mesh.GetTriangles(sub);
+                    for (int i = 0; i + 2 < subIndices.Length; i += 3)
+                    {
+                        allIndices.Add(subIndices[i]);
+                        allIndices.Add(subIndices[i + 1]);
+                        allIndices.Add(subIndices[i + 2]);
+                        triangleMaterialIds.Add(sub);
+                    }
+                }
+
+                var materials = new List<MaterialBakeData>();
+                var sharedMaterials = mr.sharedMaterials;
+                for (int i = 0; i < sharedMaterials.Length; i++)
+                {
+                    var mat = sharedMaterials[i];
+                    var m = new MaterialBakeData { slot = i, baseColor = Color.white, mainTexAssetPath = string.Empty };
+                    if (mat != null)
+                    {
+                        if (mat.HasProperty("_BaseColor"))
+                        {
+                            m.baseColor = mat.GetColor("_BaseColor");
+                        }
+                        else if (mat.HasProperty("_Color"))
+                        {
+                            m.baseColor = mat.GetColor("_Color");
+                        }
+
+                        Texture tex = null;
+                        if (mat.HasProperty("_BaseMap"))
+                        {
+                            tex = mat.GetTexture("_BaseMap");
+                        }
+                        if (tex == null && mat.HasProperty("_MainTex"))
+                        {
+                            tex = mat.GetTexture("_MainTex");
+                        }
+                        if (tex != null)
+                        {
+                            string texPath = AssetDatabase.GetAssetPath(tex);
+                            if (!string.IsNullOrEmpty(texPath))
+                            {
+                                m.mainTexAssetPath = texPath.Replace('\\', '/');
+                            }
+                        }
+                    }
+                    materials.Add(m);
+                }
 
                 var positionsWS = new Vector3[verts.Length];
                 var normalsWS = new Vector3[norms.Length];
@@ -138,8 +199,11 @@ namespace WishGI.Baking.Editor
                     localToWorld = MatrixUtility.ToFloatArray(go.transform.localToWorldMatrix),
                     positions = positionsWS,
                     normals = normalsWS,
+                    uv0 = uv0,
                     uv2 = uv2,
-                    indices = indices
+                    indices = allIndices.ToArray(),
+                    triangleMaterialIds = triangleMaterialIds.ToArray(),
+                    materials = materials
                 };
 
                 result.meshObjects.Add(item);

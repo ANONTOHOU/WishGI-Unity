@@ -15,6 +15,14 @@ namespace WishGI.Baking
     }
 
     [Serializable]
+    public class MaterialBakeData
+    {
+        public int slot;
+        public Color baseColor = Color.white;
+        public string mainTexAssetPath;
+    }
+
+    [Serializable]
     public class MeshObjectData
     {
         public string name;
@@ -22,8 +30,11 @@ namespace WishGI.Baking
         public float[] localToWorld = new float[16]; // 按列主序存储 4x4 矩阵
         public Vector3[] positions;
         public Vector3[] normals;
+        public Vector2[] uv0;
         public Vector2[] uv2;
         public int[] indices;
+        public int[] triangleMaterialIds;
+        public List<MaterialBakeData> materials = new List<MaterialBakeData>();
     }
 
     /// <summary>

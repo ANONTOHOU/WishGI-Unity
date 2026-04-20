@@ -24,9 +24,15 @@ import math
 import os
 import random
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+
+try:
+	from PIL import Image
+	HAS_PIL = True
+except Exception:
+	HAS_PIL = False
 
 
 # ----------------------------- 数据类 -----------------------------
@@ -77,6 +83,12 @@ class Triangle:
 	v2: np.ndarray
 	normal: np.ndarray
 	index: int
+	uv0: np.ndarray
+	uv1: np.ndarray
+	uv2: np.ndarray
+	material_slot: int
+	base_color: np.ndarray
+	main_tex_asset_path: str
 
 
 @dataclass
@@ -93,24 +105,75 @@ class Sample:
 
 
 def load_mesh_triangles(mesh_json: str) -> List[Triangle]:
-	"""读取网格 JSON 并展开为三角形列表。"""
+	"""读取网格 JSON 并展开为三角形列表（包含材质与 UV0 信息）。"""
 	with open(mesh_json, "r", encoding="utf-8") as f:
 		data = json.load(f)
 
 	tris: List[Triangle] = []
 	for obj in data.get("meshObjects", []):
-		positions = [Vec3.from_dict(p).to_np() for p in obj["positions"]]
-		normals = [Vec3.from_dict(n).to_np() for n in obj["normals"]]
-		indices = obj["indices"]
+		positions = [Vec3.from_dict(p).to_np() for p in obj.get("positions", [])]
+		normals = [Vec3.from_dict(n).to_np() for n in obj.get("normals", [])]
+		uv0s = [
+			np.array([float(uv.get("x", 0.0)), float(uv.get("y", 0.0))], dtype=np.float32)
+			for uv in obj.get("uv0", [])
+		]
+
+		materials = obj.get("materials", [])
+		mat_base_colors: Dict[int, np.ndarray] = {}
+		mat_tex_paths: Dict[int, str] = {}
+		for m in materials:
+			slot = int(m.get("slot", 0))
+			base = m.get("baseColor", {"r": 1.0, "g": 1.0, "b": 1.0})
+			mat_base_colors[slot] = np.array(
+				[
+					float(base.get("r", 1.0)),
+					float(base.get("g", 1.0)),
+					float(base.get("b", 1.0)),
+				],
+				dtype=np.float32,
+			)
+			mat_tex_paths[slot] = str(m.get("mainTexAssetPath", "") or "")
+
+		indices = obj.get("indices", [])
+		triangle_material_ids = obj.get("triangleMaterialIds", [])
 		for t in range(0, len(indices), 3):
 			i0, i1, i2 = indices[t : t + 3]
 			v0, v1, v2 = positions[i0], positions[i1], positions[i2]
+
 			# 使用提供的每顶点法线；如果缺失则回退为几何法线
-			n = (normals[i0] + normals[i1] + normals[i2]) / 3.0
+			if len(normals) > max(i0, i1, i2):
+				n = (normals[i0] + normals[i1] + normals[i2]) / 3.0
+			else:
+				n = np.cross(v1 - v0, v2 - v0)
 			if np.linalg.norm(n) < 1e-6:
 				n = np.cross(v1 - v0, v2 - v0)
 			n = n / (np.linalg.norm(n) + 1e-8)
-			tris.append(Triangle(v0, v1, v2, n, len(tris)))
+
+			zero_uv = np.zeros(2, dtype=np.float32)
+			uv0 = uv0s[i0] if len(uv0s) > i0 else zero_uv
+			uv1 = uv0s[i1] if len(uv0s) > i1 else zero_uv
+			uv2 = uv0s[i2] if len(uv0s) > i2 else zero_uv
+
+			tri_id = t // 3
+			mat_slot = int(triangle_material_ids[tri_id]) if tri_id < len(triangle_material_ids) else 0
+			base_color = mat_base_colors.get(mat_slot, np.array([1.0, 1.0, 1.0], dtype=np.float32))
+			tex_path = mat_tex_paths.get(mat_slot, "")
+
+			tris.append(
+				Triangle(
+					v0=v0,
+					v1=v1,
+					v2=v2,
+					normal=n,
+					index=len(tris),
+					uv0=uv0,
+					uv1=uv1,
+					uv2=uv2,
+					material_slot=mat_slot,
+					base_color=base_color,
+					main_tex_asset_path=tex_path,
+				)
+			)
 	return tris
 
 
@@ -395,21 +458,137 @@ def world_from_tangent(normal: np.ndarray, local_dir: np.ndarray) -> np.ndarray:
 	return local_dir[0] * t + local_dir[1] * b + local_dir[2] * normal
 
 
-def path_trace(pos: np.ndarray, normal: np.ndarray, view_dir_local: np.ndarray, lights: List[Light], bvh: BVHNode, tris: List[Triangle], max_bounces: int = 3, albedo: float = 0.8) -> np.ndarray:
-	"""简化路径追踪器，估计给定入射方向下的出射辐亮度。不考虑环境光贴图，每次bounce只考虑直接光。BRDF 固定为兰伯特反射，且不进行重要性采样。	"""
+def barycentric_from_point(p: np.ndarray, tri: Triangle) -> Tuple[float, float, float]:
+	"""由三角面与命中点重建重心坐标。"""
+	v0 = tri.v1 - tri.v0
+	v1 = tri.v2 - tri.v0
+	v2 = p - tri.v0
+	d00 = float(np.dot(v0, v0))
+	d01 = float(np.dot(v0, v1))
+	d11 = float(np.dot(v1, v1))
+	d20 = float(np.dot(v2, v0))
+	d21 = float(np.dot(v2, v1))
+	denom = d00 * d11 - d01 * d01
+	if abs(denom) < 1e-10:
+		return 1.0, 0.0, 0.0
+	v = (d11 * d20 - d01 * d21) / denom
+	w = (d00 * d21 - d01 * d20) / denom
+	u = 1.0 - v - w
+	return u, v, w
+
+
+def srgb_to_linear(c: np.ndarray) -> np.ndarray:
+	"""将 sRGB 颜色转换到线性空间。"""
+	c = np.clip(c, 0.0, 1.0)
+	return np.where(c <= 0.04045, c / 12.92, np.power((c + 0.055) / 1.055, 2.4))
+
+
+def load_texture_linear(mesh_json_path: str, asset_rel_path: str, cache: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
+	"""加载贴图并缓存为线性 RGB 数组（H, W, 3）。"""
+	if not asset_rel_path:
+		return None
+	if asset_rel_path in cache:
+		return cache[asset_rel_path]
+	if not HAS_PIL:
+		cache[asset_rel_path] = None
+		return None
+
+	workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(mesh_json_path))))
+	abs_path = os.path.join(workspace_root, "UnityProjectBake", asset_rel_path.replace("/", os.sep))
+	if not os.path.exists(abs_path):
+		cache[asset_rel_path] = None
+		return None
+
+	try:
+		with Image.open(abs_path) as img:
+			rgb = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
+			linear = srgb_to_linear(rgb)
+			cache[asset_rel_path] = linear
+			return linear
+	except Exception:
+		cache[asset_rel_path] = None
+		return None
+
+
+def sample_albedo(tri: Triangle, bary: Tuple[float, float, float], mesh_json_path: str, default_albedo_rgb: np.ndarray, tex_cache: Dict[str, np.ndarray], stats: Dict[str, int]) -> np.ndarray:
+	"""按三角面材质与 UV0 采样反射率，失败时回退默认 albedo。"""
+	base = np.clip(tri.base_color, 0.0, 1.0)
+	tex = load_texture_linear(mesh_json_path, tri.main_tex_asset_path, tex_cache)
+	if tex is None:
+		if tri.main_tex_asset_path:
+			stats["textureFallbackCount"] += 1
+		if np.all(np.isfinite(base)):
+			return base
+		stats["defaultFallbackCount"] += 1
+		return default_albedo_rgb
+
+	stats["textureSampleCount"] += 1
+	u, v, w = bary
+	uv = u * tri.uv0 + v * tri.uv1 + w * tri.uv2
+	uu = float(np.clip(uv[0], 0.0, 1.0))
+	vv = float(np.clip(uv[1], 0.0, 1.0))
+
+	h, tw, _ = tex.shape
+	fx = uu * max(tw - 1, 1)
+	fy = vv * max(h - 1, 1)
+	x0 = int(np.floor(fx))
+	y0 = int(np.floor(fy))
+	x1 = min(x0 + 1, tw - 1)
+	y1 = min(y0 + 1, h - 1)
+	tx = fx - x0
+	ty = fy - y0
+
+	c00 = tex[y0, x0]
+	c10 = tex[y0, x1]
+	c01 = tex[y1, x0]
+	c11 = tex[y1, x1]
+	c0 = c00 * (1.0 - tx) + c10 * tx
+	c1 = c01 * (1.0 - tx) + c11 * tx
+	tex_col = c0 * (1.0 - ty) + c1 * ty
+	return np.clip(tex_col * base, 0.0, 1.0)
+
+
+def path_trace(
+	pos: np.ndarray,
+	normal: np.ndarray,
+	barycentric: Tuple[float, float, float],
+	tri_index: int,
+	view_dir_local: np.ndarray,
+	lights: List[Light],
+	bvh: BVHNode,
+	tris: List[Triangle],
+	mesh_json_path: str,
+	max_bounces: int = 3,
+	default_albedo_rgb: np.ndarray | None = None,
+	tex_cache: Dict[str, np.ndarray] | None = None,
+	stats: Dict[str, int] | None = None,
+) -> np.ndarray:
+	"""简化路径追踪器，使用按面材质+纹理采样的反射率推进多次反弹。"""
+	if default_albedo_rgb is None:
+		default_albedo_rgb = np.array([0.8, 0.8, 0.8], dtype=np.float32)
+	if tex_cache is None:
+		tex_cache = {}
+	if stats is None:
+		stats = {"textureSampleCount": 0, "textureFallbackCount": 0, "defaultFallbackCount": 0}
+
 	# 带有下一个事件估计（直接光线）和余弦采样的简单兰伯特路径追踪器。
-	throughput = np.array([albedo, albedo, albedo], dtype=np.float32)
+	throughput = np.array([1.0, 1.0, 1.0], dtype=np.float32)
 	radiance = np.zeros(3, dtype=np.float32)
 
 	# 将输入点视为首次碰到的表面点
 	hit_pos = pos
 	hit_normal = normal
+	hit_bary = barycentric
+	hit_tri_index = tri_index
 	ray_dir = world_from_tangent(normal, view_dir_local)
 
 	for bounce in range(max_bounces):
+		hit_tri = tris[hit_tri_index]
+		hit_albedo = sample_albedo(hit_tri, hit_bary, mesh_json_path, default_albedo_rgb, tex_cache, stats)
+
 		# 当前的直射光强度达到峰值
 		Ld = direct_radiance(hit_pos, hit_normal, lights, bvh, tris)
-		radiance += throughput * Ld
+		radiance += throughput * hit_albedo * Ld
 
 		# 经过两次回转后
 		if bounce >= 2:
@@ -431,9 +610,11 @@ def path_trace(pos: np.ndarray, normal: np.ndarray, view_dir_local: np.ndarray, 
 		tri = tris[tri_idx]
 		hit_pos = ray_origin + new_dir_world * t_hit
 		hit_normal = tri.normal
+		hit_bary = barycentric_from_point(hit_pos, tri)
+		hit_tri_index = tri_idx
 
 		# 更新漫反射反弹的通量
-		throughput *= albedo
+		throughput *= hit_albedo
 
 	return radiance
 
@@ -503,7 +684,7 @@ def direct_radiance(pos: np.ndarray, normal: np.ndarray, lights: List[Light], bv
 # ----------------------------- 管线 -----------------------------
 
 
-def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: float, num_samples: int, num_dirs: int, max_bounces: int, albedo: float, seed: int, dirs_out: str | None):
+def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: float, num_samples: int, num_dirs: int, max_bounces: int, default_albedo: float, seed: int, dirs_out: str | None):
 	"""执行离线采样主流程：采样点生成、路径追踪、写出 JSON。"""
 	# 固定种子，以便在 SH 拟合中采样、方向和路径追踪可重复
 	random.seed(seed)
@@ -518,6 +699,9 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 
 	print(f"[GI] Building BVH for ray queries...")
 	bvh = build_bvh(tris)
+	tex_cache: Dict[str, np.ndarray] = {}
+	albedo_stats = {"textureSampleCount": 0, "textureFallbackCount": 0, "defaultFallbackCount": 0}
+	default_albedo_rgb = np.array([default_albedo, default_albedo, default_albedo], dtype=np.float32)
 
 	# min_dist 决定样本空间密度；num_samples 是目标上限，两者共同控制质量与耗时。
 	print(f"[GI] Blue-noise sampling on surface: target {num_samples}, minDist {min_dist}")
@@ -541,12 +725,26 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 		s.radiance_dirs = []  # 类型：忽略[属性已定义]
 
 		# 基于预先计算的局部方向集路径追踪。
-		# max_bounces 与 albedo 的初始化是经验折中：
+		# max_bounces 与 default_albedo 的初始化是经验折中：
 		# - bounces=3 可覆盖基础间接光而不过度增加时长。
-		# - albedo=0.8 作为中性漫反射近似，避免过亮或过暗。
+		# - default_albedo=0.8 在缺失材质数据时提供稳定回退。
 		radiance_per_dir = []
 		for d_local in dirs_local:
-			radiance = path_trace(p, tri.normal, d_local, lights, bvh, tris, max_bounces=max_bounces, albedo=albedo)
+			radiance = path_trace(
+				p,
+				tri.normal,
+				bary,
+				tri.index,
+				d_local,
+				lights,
+				bvh,
+				tris,
+				mesh_json,
+				max_bounces=max_bounces,
+				default_albedo_rgb=default_albedo_rgb,
+				tex_cache=tex_cache,
+				stats=albedo_stats,
+			)
 			radiance_per_dir.append([float(radiance[0]), float(radiance[1]), float(radiance[2])])
 		s.radiance_dirs = radiance_per_dir
 		samples.append(s)
@@ -562,6 +760,13 @@ def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: fl
 		"numSamples": len(samples),
 		"numDirections": num_dirs,
 		"seed": seed,
+		"defaultAlbedo": default_albedo,
+		"textureSupport": bool(HAS_PIL),
+		"albedoStats": {
+			"textureSampleCount": int(albedo_stats["textureSampleCount"]),
+			"textureFallbackCount": int(albedo_stats["textureFallbackCount"]),
+			"defaultFallbackCount": int(albedo_stats["defaultFallbackCount"]),
+		},
 		"dirsLocal": [
 			{"x": float(d[0]), "y": float(d[1]), "z": float(d[2])}
 			for d in dirs_local
@@ -597,7 +802,8 @@ def parse_args():
 	parser.add_argument("--num-samples", type=int, default=2000, help="Target sample count")
 	parser.add_argument("--directions", type=int, default=64, help="Number of cosine-weighted hemisphere directions (per-sample outputs)")
 	parser.add_argument("--bounces", type=int, default=3, help="Max path bounces for indirect lighting")
-	parser.add_argument("--albedo", type=float, default=0.8, help="Lambert albedo (0-1), gray")
+	parser.add_argument("--albedo", type=float, default=0.8, help="Default fallback albedo (legacy alias of --default-albedo)")
+	parser.add_argument("--default-albedo", type=float, default=None, help="Fallback albedo when material/texture data is missing")
 	parser.add_argument("--seed", type=int, default=42, help="Random seed for sampling, directions, and tracer")
 	parser.add_argument("--dirs-out", type=str, default=None, help="Optional .npy file to store the direction set for SH fitting")
 	return parser.parse_args()
@@ -606,6 +812,7 @@ def parse_args():
 def main():
 	"""命令行入口。"""
 	args = parse_args()
+	default_albedo = args.default_albedo if args.default_albedo is not None else args.albedo
 	run_sampling(
 		mesh_json=args.mesh_json,
 		scene_json=args.scene_json,
@@ -614,7 +821,7 @@ def main():
 		num_samples=args.num_samples,
 		num_dirs=args.directions,
 		max_bounces=args.bounces,
-		albedo=args.albedo,
+		default_albedo=default_albedo,
 		seed=args.seed,
 		dirs_out=args.dirs_out,
 	)
