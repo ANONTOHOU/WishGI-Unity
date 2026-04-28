@@ -1,5 +1,4 @@
-// URP 中用于 WishGI 探测器采样的辅助函数
-// 函数：
+// 采样的辅助函数
 //   EvalSH9_L2(float3 dir) -> 浮点数 3×3 基础矩阵（以 float3[9] 形式返回）
 //   FetchProbeCoeffs(sampler2D tex, float texelsPerProbe, float probeCount, int probeIndex) -> 浮点数 3×9 系数（以 float3[9] 形式返回）
 //   SampleWishGI(...) -> 根据 uv2 权重和法线返回浮点数 3×1 发射色

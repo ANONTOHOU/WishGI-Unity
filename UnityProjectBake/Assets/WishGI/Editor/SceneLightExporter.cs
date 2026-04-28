@@ -73,22 +73,39 @@ namespace WishGI.Editor
     public class SceneLightExporter : EditorWindow
     {
         /// <summary>
+        /// 无交互导出：用于一键流程按固定路径写出场景灯光数据。
+        /// </summary>
+        public static bool ExportLightsToPath(string path, bool includeMeshInstances = true, bool prettyPrint = false)
+        {
+            var data = new SceneLightExportRoot();
+            data.sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            if (string.IsNullOrEmpty(data.sceneName)) data.sceneName = "UntitledScene";
+
+            data.ambient = GetAmbientData();
+            data.lights = GetLightsData();
+            data.meshInstances = includeMeshInstances ? GetMeshInstancesData() : new List<MeshInstanceData>();
+
+            string folder = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(folder) && !Directory.Exists(folder))
+            {
+                Directory.CreateDirectory(folder);
+            }
+
+            string json = JsonUtility.ToJson(data, prettyPrint);
+            File.WriteAllText(path, json);
+            Debug.Log($"[GI] 场景灯光导出完成: {path} (lights={data.lights.Count})");
+            return true;
+        }
+
+        /// <summary>
         /// 导出当前场景灯光、环境光和网格实例信息到 JSON。
         /// 该 JSON 会被离线采样器读取作为光照输入。
         /// </summary>
         [MenuItem("GI/Step 1: Export Scene Lights to JSON", false, 11)]
         public static void ExportLights()
         {
-            var data = new SceneLightExportRoot();
-            // 场景名用于默认文件名，方便离线流程按场景组织产物。
-            data.sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-            if (string.IsNullOrEmpty(data.sceneName)) data.sceneName = "UntitledScene";
-
-            data.ambient = GetAmbientData();
-            data.lights = GetLightsData();
-            data.meshInstances = GetMeshInstancesData();
-
-            string json = JsonUtility.ToJson(data, true);
+            string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            if (string.IsNullOrEmpty(sceneName)) sceneName = "UntitledScene";
             
             // 默认保存到工作区根目录下的 Data/scenes 文件夹
             string defaultFolder = Path.GetFullPath(Path.Combine(Application.dataPath, "../../Data/scenes"));
@@ -97,14 +114,12 @@ namespace WishGI.Editor
                 Directory.CreateDirectory(defaultFolder);
             }
 
-            string defaultName = data.sceneName + "_lights.json";
+            string defaultName = sceneName + "_lights.json";
             string path = EditorUtility.SaveFilePanel("Export Scene Lights", defaultFolder, defaultName, "json");
             
             if (!string.IsNullOrEmpty(path))
             {
-                File.WriteAllText(path, json);
-                Debug.Log($"[GI] 成功导出 {data.lights.Count} 个光源及环境光信息到: {path}");
-                AssetDatabase.Refresh();
+                ExportLightsToPath(path, includeMeshInstances: true, prettyPrint: true);
             }
         }
 
@@ -145,7 +160,7 @@ namespace WishGI.Editor
         private static List<LightExportData> GetLightsData()
         {
             var list = new List<LightExportData>();
-            Light[] allLights = FindObjectsOfType<Light>();
+            Light[] allLights = FindObjectsByType<Light>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
             
             foreach(var l in allLights)
             {
@@ -181,7 +196,7 @@ namespace WishGI.Editor
         private static List<MeshInstanceData> GetMeshInstancesData()
         {
             var list = new List<MeshInstanceData>();
-            MeshFilter[] allMeshes = FindObjectsOfType<MeshFilter>();
+            MeshFilter[] allMeshes = FindObjectsByType<MeshFilter>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
             
             foreach (var mf in allMeshes)
             {

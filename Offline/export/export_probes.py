@@ -10,34 +10,31 @@ python Offline/export/export_probes.py `
   --output-dir Data/probes
 
 输入
------
-- 采样点 JSON（例如 Data/samples/<scene>_samples_pt.json）
+采样点 JSON（例如 Data/samples/<scene>_samples_pt.json）
     期望字段：samples[i].position.{x,y,z}。若缺少 sample_id，则使用索引。
-- 网格 JSON（例如 Data/meshs/<scene>_mesh.json），用于读取顶点位置。
-- 目标探针数量 K。
+网格 JSON（例如 Data/meshs/<scene>_mesh.json），用于读取顶点位置。
+目标探针数量 K。
 
 输出
------
-- probes.json: 形如 {"probe_id", "position", "space"} 的列表
-- sample_weights.json: W 的稀疏行格式（行=sample，列=top-K probes）
+probes.json: 形如 {"probe_id", "position", "space"} 的列表
+sample_weights.json: W 的稀疏行格式（行=sample，列=top-K probes）
     {
         "num_samples": N,
         "num_probes": K,
         "top_k_sample": topK_sample,
         "weights": [ {"sample_id": i, "probes": [{"id": k, "w": w_ik}, ...]} ]
     }
-- mesh_assoc.json: 每个网格对象的 vertex→probe 关联（top-K 归一化）
+mesh_assoc.json: 每个网格对象的 vertex→probe 关联（top-K 归一化）
     [
         {"mesh_name": name, "top_k_vertex": K, "vertices": [ {"id": vid, "probes": [{"id": k, "w": w_vk}, ...]} ]}
     ]
 
-关于 W 的说明（最小二乘）
-------------------------
-- sample_weights 构建矩阵 W，其中 W[i,k] 是 sample i 对 probe k 的权重。
-- 每行归一化：sum_k W[i,k] = 1（采用 top-K 最近探针与反距离加权）。
-- 在 SH 求解中，对每个 sample i 和方向 d：f_i(d) ≈ Σ_k W[i,k] * SH_k(d)。
-  组装正规方程时，W 作为从 probe SH 到 sample SH 的线性混合矩阵。
-  mesh_assoc 同理，用于将顶点权重写入 uv2（top-K 归一化）。
+    关于 W 
+    sample_weights 构建矩阵 W，其中 W[i,k] 是 sample i 对 probe k 的权重。
+    每行归一化：sum_k W[i,k] = 1（采用 top-K 最近探针与反距离加权）。
+    在 SH 求解中，对每个 sample i 和方向 d：f_i(d) ≈ Σ_k W[i,k] * SH_k(d)。
+    组装正规方程时，W 作为从 probe SH 到 sample SH 的线性混合矩阵。
+    mesh_assoc 同理，用于将顶点权重写入 uv2（top-K 归一化）。
 """
 
 from __future__ import annotations
@@ -77,10 +74,10 @@ class MeshObject:
 
 
 def load_samples(path: str) -> List[Sample]:
-    """从采样 JSON 读取 sample 点位。
-
-    兼容两种字段命名：position 与 pos。
-    若缺失 sample_id，则用数组索引回填，保证后续索引稳定。
+    """
+        从采样 JSON 读取 sample 点位。
+        兼容两种字段命名：position 与 pos。
+        若缺失 sample_id，则用数组索引回填，保证后续索引稳定。
     """
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -144,18 +141,18 @@ def save_mesh_assoc(path: str, assoc_list: List[Dict[str, Any]], top_k_vertex: i
 
 
 def kmedoids(points: np.ndarray, k: int, iters: int = 20, seed: int = 42) -> np.ndarray:
-    """在 Nx3 点集上执行 K-Medoids。
-
-    这里选择 K-Medoids 而不是 K-Means：
-    - 代表点来自真实样本，几何解释更稳定。
-    - 对离群点鲁棒性更好，有助于减少 probe 漏光风险。
+    """
+        在 Nx3 点集上执行 K-Medoids。
+        这里选择 K-Medoids 而不是 K-Means：
+        代表点来自真实样本，几何解释更稳定。
+        对离群点鲁棒性更好，有助于减少 probe 漏光风险。
     """
     rng = np.random.default_rng(seed)
     n = points.shape[0]
     if n == 0:
-        raise ValueError("No sample points found; cannot distribute probes")
+        raise ValueError("no points provided for kmedoids")
     if k <= 0:
-        raise ValueError("Probe count must be > 0")
+        raise ValueError("probe count must be > 0")
     k = min(k, n)
     medoid_idx = rng.choice(n, size=k, replace=False)
     
@@ -184,9 +181,9 @@ def kmedoids(points: np.ndarray, k: int, iters: int = 20, seed: int = 42) -> np.
 
 
 def topk_inverse_distance(points: np.ndarray, centers: np.ndarray, top_k: int, eps: float = 1e-8):
-    """计算 top-K 反距离权重。
-
-    每一行都会归一化到 1，保证可直接作为线性混合系数使用。
+    """
+        计算 top-K 反距离权重。
+        每一行都会归一化到 1，保证可直接作为线性混合系数使用。
     """
     n = points.shape[0]
     k_centers = centers.shape[0]

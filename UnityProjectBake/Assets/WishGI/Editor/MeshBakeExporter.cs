@@ -18,6 +18,30 @@ namespace WishGI.Baking.Editor
     public static class MeshBakeExporter
     {
         /// <summary>
+        /// 无交互导出：用于一键流程按固定路径写出网格烘焙数据。
+        /// </summary>
+        public static bool ExportJsonToPath(string path)
+        {
+            var data = CollectBakeData();
+            if (data.meshObjects.Count == 0)
+            {
+                Debug.LogWarning("[GI] 没有找到符合渲染条件的模型物体，网格导出已跳过。");
+                return false;
+            }
+
+            string folder = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(folder) && !Directory.Exists(folder))
+            {
+                Directory.CreateDirectory(folder);
+            }
+
+            var json = JsonUtility.ToJson(data, true);
+            File.WriteAllText(path, json);
+            Debug.Log($"[GI] 网格烘焙数据导出完成: {path} (meshes={data.meshObjects.Count})");
+            return true;
+        }
+
+        /// <summary>
         /// 导出当前场景参与 GI 的网格数据到 JSON。
         /// </summary>
         [MenuItem("GI/Step 2: Export Mesh Bake Data/Export JSON", false, 12)]
@@ -44,10 +68,7 @@ namespace WishGI.Baking.Editor
             string path = EditorUtility.SaveFilePanel("Save Mesh Bake JSON", defaultFolder, sceneName + "_mesh.json", "json");
             if (string.IsNullOrEmpty(path)) return;
 
-            var json = JsonUtility.ToJson(data, true);
-            File.WriteAllText(path, json);
-            Debug.Log($"[GI] 成功导出 {data.meshObjects.Count} 个网格的烘焙数据至: {path}");
-            AssetDatabase.Refresh();
+            ExportJsonToPath(path);
         }
 
         /// <summary>
@@ -81,7 +102,7 @@ namespace WishGI.Baking.Editor
         /// - 过滤有效的 MeshRenderer
         /// - 获取世界空间顶点法线、UV0/UV2 与材质反射率信息
         /// </summary>
-        private static MeshBakeDataJson CollectBakeData()
+        public static MeshBakeDataJson CollectBakeData()
         {
             var result = new MeshBakeDataJson();
             var renderers = UEObject.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);

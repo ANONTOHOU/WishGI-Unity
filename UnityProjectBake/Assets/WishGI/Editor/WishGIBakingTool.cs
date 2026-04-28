@@ -5,6 +5,9 @@ using System.IO;
 using System.Diagnostics;
 using System.Text;
 using System.Collections.Generic;
+using UnityEditor.SceneManagement;
+using WishGI.Baking.Editor;
+using WishGI.Editor;
 
 public class WishGIBakingTool : EditorWindow
 {
@@ -79,6 +82,15 @@ public class WishGIBakingTool : EditorWindow
     private int shOrder = 2;
     private float lambdaReg = 0.1f;
 
+    private bool includeStep0GenerateUV2 = true;
+    private bool includeStep1ExportLights = true;
+    private bool includeStep2ExportMesh = true;
+    private bool autoApplyAfterBake = true;
+    private bool autoAssignProbeMapToMaterials = true;
+    private string lastPreflightMessage = "";
+    private Vector2 scrollPos;
+    private bool isIntegratedRunInProgress;
+
     private const string TimeCalibrationKey = "WishGI.BakeTimeCalibration";
 
     [MenuItem("GI/Baking Tool")]
@@ -92,7 +104,9 @@ public class WishGIBakingTool : EditorWindow
     /// </summary>
     private void OnGUI()
     {
-        GUILayout.Label("GI Offline Baking (Python Pipeline)", EditorStyles.boldLabel);
+        scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
+
+        GUILayout.Label("离线烘焙（python 管线）", EditorStyles.boldLabel);
         EditorGUILayout.Space();
 
         string workspaceRoot = GetWorkspaceRoot();
@@ -118,7 +132,7 @@ public class WishGIBakingTool : EditorWindow
         GUILayout.EndHorizontal();
 
         EditorGUILayout.Space();
-        qualityPreset = (QualityPreset)EditorGUILayout.EnumPopup("Quality Preset", qualityPreset);
+        qualityPreset = (QualityPreset)EditorGUILayout.EnumPopup("Quality Settings", qualityPreset);
 
         int probes;
         int dirs;
@@ -140,7 +154,7 @@ public class WishGIBakingTool : EditorWindow
         }
 
         EditorGUILayout.Space();
-        GUILayout.Label("Shared Parameters", EditorStyles.boldLabel);
+        GUILayout.Label("其余参数", EditorStyles.boldLabel);
         seed = EditorGUILayout.IntField("Seed", seed);
         minDist = EditorGUILayout.FloatField("Min Dist", minDist);
         bounces = EditorGUILayout.IntField("Bounces", bounces);
@@ -163,7 +177,7 @@ public class WishGIBakingTool : EditorWindow
 
         TimeEstimate estimate = EstimateBakeTime(probes, dirs, samples);
         EditorGUILayout.HelpBox(
-            $"Estimated Time: {FormatSeconds(estimate.totalSec)}\n" +
+            $"预估时间: {FormatSeconds(estimate.totalSec)}\n" +
             $"S1 Sampling: {FormatSeconds(estimate.step1Sec)}\n" +
             $"S2 Probe Export: {FormatSeconds(estimate.step2Sec)}\n" +
             $"S3 SH Fit: {FormatSeconds(estimate.step3Sec)}\n" +
@@ -173,13 +187,28 @@ public class WishGIBakingTool : EditorWindow
 
         EditorGUILayout.Space();
         pythonPath = EditorGUILayout.TextField("Python Command", pythonPath);
-        EditorGUILayout.HelpBox("High: 128 probes, 512 directions, 512 samples\nLow: 64 probes, 128 directions, 256 samples\nCustom: 由你手动指定 probes/directions/samples。\n输出自动根据场景-日期-次数命名，目录在 Data/probes/.", MessageType.Info);
+        EditorGUILayout.HelpBox("Custom模式下一切手动指定 probes/directions/samples。\n输出自动根据“场景-日期-次数”命名，目录在 Data/probes/.", MessageType.Info);
 
-        GUILayout.FlexibleSpace();
+        EditorGUILayout.Space();
+        GUILayout.Label("步骤集成", EditorStyles.boldLabel);
+        includeStep0GenerateUV2 = EditorGUILayout.ToggleLeft("运行步骤0: 生成 UV2", includeStep0GenerateUV2);
+        includeStep1ExportLights = EditorGUILayout.ToggleLeft("运行步骤1: 导出场景灯光", includeStep1ExportLights);
+        includeStep2ExportMesh = EditorGUILayout.ToggleLeft("运行步骤2: 导出网格烘焙数据", includeStep2ExportMesh);
+        autoApplyAfterBake = EditorGUILayout.ToggleLeft("烘焙后自动应用到 Unity", autoApplyAfterBake);
+        autoAssignProbeMapToMaterials = EditorGUILayout.ToggleLeft("自动将探针图分配给 GI 材质（实例）", autoAssignProbeMapToMaterials);
+
+        if (!string.IsNullOrEmpty(lastPreflightMessage))
+        {
+            EditorGUILayout.HelpBox(lastPreflightMessage, MessageType.None);
+        }
 
         using (new EditorGUI.DisabledScope(!valid))
         {
-            if (GUILayout.Button("1. Run Python Baking!", GUILayout.Height(40)))
+            if (GUILayout.Button("导出数据并烘焙回写", GUILayout.Height(34)))
+            {
+                RunIntegratedPipeline();
+            }
+            if (GUILayout.Button("仅运行 Python 烘焙", GUILayout.Height(40)))
             {
                 RunBakingPipeline();
             }
@@ -189,13 +218,15 @@ public class WishGIBakingTool : EditorWindow
         if (!string.IsNullOrEmpty(lastBakeOutputDir))
         {
             GUI.color = Color.green;
-            if (GUILayout.Button("2. Import Texture & Apply UV2", GUILayout.Height(30)))
+            if (GUILayout.Button("导入纹理并应用 UV2", GUILayout.Height(30)))
             {
                 ApplyBakeDataToUnity(lastBakeOutputDir);
             }
             GUI.color = Color.white;
-            EditorGUILayout.HelpBox($"Will apply data from:\n{lastBakeOutputDir}", MessageType.Info);
+            EditorGUILayout.HelpBox($"将应用以下目录的数据:\n{lastBakeOutputDir}", MessageType.Info);
         }
+
+        EditorGUILayout.EndScrollView();
     }
 
     /// <summary>
@@ -282,28 +313,29 @@ public class WishGIBakingTool : EditorWindow
             float step2Sec = 0.0f;
             float step3Sec = 0.0f;
             float step4Sec = 0.0f;
+            string progressTitle = isIntegratedRunInProgress ? "GI Run All Pipeline" : "GI Baking Pipeline";
 
             Stopwatch stepTimer = Stopwatch.StartNew();
-            EditorUtility.DisplayProgressBar("GI Baking Pipeline", "1/4 Surface Sampling & Raytracing...", 0.2f);
-            // 路径仍由现有机制控制，参数统一来自本工具 UI。
+            ShowProgress(progressTitle, "1/4 Surface Sampling & Raytracing...", isIntegratedRunInProgress ? 0.35f : 0.2f);
+            // 参数来自本工具 UI。
             RunPython(workspaceRoot, "Offline/sampling/sample_surface.py", 
                 $"--mesh-json \"{meshJsonPath}\" --scene-json \"{sceneJsonPath}\" --output \"{samplesOut}\" --min-dist {minDist} --num-samples {samples} --directions {dirs} --bounces {bounces} --default-albedo {defaultAlbedo} --seed {seed} --dirs-out \"{dirsOut}\"");
             step1Sec = (float)stepTimer.Elapsed.TotalSeconds;
 
             stepTimer.Restart();
-            EditorUtility.DisplayProgressBar("GI Baking Pipeline", "2/4 Probe Clustering & Weights...", 0.45f);
+            ShowProgress(progressTitle, "2/4 Probe Clustering & Weights...", isIntegratedRunInProgress ? 0.55f : 0.45f);
             RunPython(workspaceRoot, "Offline/export/export_probes.py", 
                 $"--samples-json \"{samplesOut}\" --mesh-json \"{meshJsonPath}\" --probes {probes} --top-k-sample {topKSample} --top-k-vertex {topKVertex} --output-dir \"{outDir}\" --seed {seed}");
             step2Sec = (float)stepTimer.Elapsed.TotalSeconds;
 
             stepTimer.Restart();
-            EditorUtility.DisplayProgressBar("GI Baking Pipeline", "3/4 Solving SH Coefficients...", 0.7f);
+            ShowProgress(progressTitle, "3/4 Solving SH Coefficients...", isIntegratedRunInProgress ? 0.75f : 0.7f);
             RunPython(workspaceRoot, "Offline/baking/fit_sh.py", 
                 $"--samples-json \"{samplesOut}\" --sample-weights \"{outDir}/sample_weights.json\" --order {shOrder} --lambda-reg {lambdaReg} --output-npy \"{outDir}/probes_sh.npy\" --output-json \"{outDir}/probes_sh.json\" --dirs-npy \"{dirsOut}\"");
             step3Sec = (float)stepTimer.Elapsed.TotalSeconds;
 
             stepTimer.Restart();
-            EditorUtility.DisplayProgressBar("GI Baking Pipeline", "4/4 Packing Probes to Texture...", 0.9f);
+            ShowProgress(progressTitle, "4/4 Packing Probes to Texture...", isIntegratedRunInProgress ? 0.9f : 0.9f);
             RunPython(workspaceRoot, "Offline/baking/pack_probes.py", 
                 $"--probes-npy \"{outDir}/probes_sh.npy\" --order {shOrder} --output-tex \"{outDir}/probe_map.npy\" --output-meta \"{outDir}/probe_map_meta.json\"");
             step4Sec = (float)stepTimer.Elapsed.TotalSeconds;
@@ -330,7 +362,141 @@ public class WishGIBakingTool : EditorWindow
     }
 
     /// <summary>
-    /// 运行单个 Python 脚本，并在失败时抛出详细错误。
+    /// 一键串联 Step0/1/2 与 Python 四步，并可在完成后自动回填 Unity。
+    /// </summary>
+    private void RunIntegratedPipeline()
+    {
+        if (!PreflightCheck(out string message))
+        {
+            lastPreflightMessage = message;
+            UnityEngine.Debug.LogError($"[GI] Preflight failed: {message}");
+            return;
+        }
+        lastPreflightMessage = message;
+
+        string workspaceRoot = GetWorkspaceRoot();
+        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        if (string.IsNullOrEmpty(sceneName))
+        {
+            sceneName = "UntitledScene";
+        }
+
+        try
+        {
+            Stopwatch integratedTimer = Stopwatch.StartNew();
+            isIntegratedRunInProgress = true;
+            if (includeStep0GenerateUV2)
+            {
+                Stopwatch stepTimer = Stopwatch.StartNew();
+                ShowProgress("GI Run All Pipeline", "Step0: Generate UV2...", 0.05f);
+                UV2Generator.GenerateUV2ForScene();
+                UnityEngine.Debug.Log($"[GI] Step0 finished in {FormatSeconds((float)stepTimer.Elapsed.TotalSeconds)}");
+            }
+
+            if (includeStep1ExportLights)
+            {
+                Stopwatch stepTimer = Stopwatch.StartNew();
+                ShowProgress("GI Run All Pipeline", "Step1: Export Lights...", 0.12f);
+                string lightAbsPath = Path.Combine(workspaceRoot, "Data", "scenes", sceneName + "_lights.json");
+
+                bool canSkip = !EditorSceneManager.GetActiveScene().isDirty && File.Exists(lightAbsPath);
+                if (canSkip)
+                {
+                    sceneJsonPath = GetWorkspaceRelativePath(lightAbsPath, workspaceRoot);
+                    UnityEngine.Debug.Log($"[GI] Step1 skipped (scene unchanged): {sceneJsonPath}");
+                }
+                else if (SceneLightExporter.ExportLightsToPath(lightAbsPath, includeMeshInstances: false, prettyPrint: false))
+                {
+                    sceneJsonPath = GetWorkspaceRelativePath(lightAbsPath, workspaceRoot);
+                }
+                UnityEngine.Debug.Log($"[GI] Step1 finished in {FormatSeconds((float)stepTimer.Elapsed.TotalSeconds)}");
+            }
+
+            if (includeStep2ExportMesh)
+            {
+                Stopwatch stepTimer = Stopwatch.StartNew();
+                ShowProgress("GI Run All Pipeline", "Step2: Export Mesh Data...", 0.2f);
+                string meshAbsPath = Path.Combine(workspaceRoot, "Data", "meshs", sceneName + "_mesh.json");
+                if (MeshBakeExporter.ExportJsonToPath(meshAbsPath))
+                {
+                    meshJsonPath = GetWorkspaceRelativePath(meshAbsPath, workspaceRoot);
+                }
+                UnityEngine.Debug.Log($"[GI] Step2 finished in {FormatSeconds((float)stepTimer.Elapsed.TotalSeconds)}");
+            }
+
+            RunBakingPipeline();
+
+            if (autoApplyAfterBake && !string.IsNullOrEmpty(lastBakeOutputDir))
+            {
+                ApplyBakeDataToUnity(lastBakeOutputDir);
+            }
+
+            integratedTimer.Stop();
+            UnityEngine.Debug.Log($"[GI] Run All finished in {FormatSeconds((float)integratedTimer.Elapsed.TotalSeconds)}");
+        }
+        finally
+        {
+            isIntegratedRunInProgress = false;
+            EditorUtility.ClearProgressBar();
+        }
+    }
+
+    /// <summary>
+    /// 统一进度条更新并触发界面刷新，避免长任务阶段看起来卡在旧文案。
+    /// </summary>
+    private void ShowProgress(string title, string info, float progress)
+    {
+        EditorUtility.DisplayProgressBar(title, info, Mathf.Clamp01(progress));
+        EditorApplication.QueuePlayerLoopUpdate();
+        SceneView.RepaintAll();
+        Repaint();
+    }
+
+    /// <summary>
+    /// 执行一键流程前的基础可用性检查。
+    /// </summary>
+    private bool PreflightCheck(out string message)
+    {
+        if (string.IsNullOrWhiteSpace(pythonPath))
+        {
+            message = "Python command is empty.";
+            return false;
+        }
+
+        int probes;
+        int dirs;
+        int samples;
+        ResolveEffectiveQuality(out probes, out dirs, out samples);
+        if (!ValidateParameters(probes, dirs, samples, out string validationError))
+        {
+            message = validationError;
+            return false;
+        }
+
+        string workspaceRoot = GetWorkspaceRoot();
+        string[] requiredScripts =
+        {
+            Path.Combine(workspaceRoot, "Offline", "sampling", "sample_surface.py"),
+            Path.Combine(workspaceRoot, "Offline", "export", "export_probes.py"),
+            Path.Combine(workspaceRoot, "Offline", "baking", "fit_sh.py"),
+            Path.Combine(workspaceRoot, "Offline", "baking", "pack_probes.py"),
+        };
+
+        foreach (string s in requiredScripts)
+        {
+            if (!File.Exists(s))
+            {
+                message = "Missing script: " + s;
+                return false;
+            }
+        }
+
+        message = "Preflight passed.";
+        return true;
+    }
+
+    /// <summary>
+    /// 运行单个 Python 脚本，采用持续轮询并强制刷新 UI，解决假死定格问题。
     /// </summary>
     private void RunPython(string workingDir, string scriptPath, string args)
     {
@@ -348,9 +514,23 @@ public class WishGIBakingTool : EditorWindow
 
         using (Process process = Process.Start(startInfo))
         {
-            string output = process.StandardOutput.ReadToEnd();
-            string error = process.StandardError.ReadToEnd();
-            process.WaitForExit();
+            // 使用异步事件吸收输出，防止缓冲区塞满死锁
+            StringBuilder output = new StringBuilder();
+            StringBuilder error = new StringBuilder();
+            process.OutputDataReceived += (s, e) => { if (e.Data != null) output.AppendLine(e.Data); };
+            process.ErrorDataReceived += (s, e) => { if (e.Data != null) error.AppendLine(e.Data); };
+            
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            // 保持主线程轮询，并且用 DisplayProgressBar 强制系统 Pump 消息泵
+            while (!process.HasExited)
+            {
+                // 注意：这里适当停顿防止占满CPU，并且不阻碍UI绘制
+                System.Threading.Thread.Sleep(50);
+            }
+
+            process.WaitForExit(); // 确保安全结束
 
             if (process.ExitCode != 0)
             {
@@ -378,12 +558,20 @@ public class WishGIBakingTool : EditorWindow
         try
         {
             EditorUtility.DisplayProgressBar("GI Apply", "Importing Texture...", 0.3f);
-            int probeCount = ImportProbeTexture(npyPath, metaPath, targetAssetPath);
+            int texelsPerProbe;
+            int probeCount = ImportProbeTexture(npyPath, metaPath, targetAssetPath, out texelsPerProbe);
 
             if (probeCount > 0)
             {
                 EditorUtility.DisplayProgressBar("GI Apply", "Applying UV2 to Meshes...", 0.6f);
                 ApplyMeshAssocToAll(assocPath, probeCount);
+                if (autoAssignProbeMapToMaterials)
+                {
+                    EditorUtility.DisplayProgressBar("GI Apply", "Assigning ProbeMap To GI Materials...", 0.85f);
+                    int bound, skipped;
+                    AssignProbeMapToGiMaterials(targetAssetPath, probeCount, texelsPerProbe, out bound, out skipped);
+                    UnityEngine.Debug.Log($"[GI] Material ProbeMap assignment done. Bound={bound}, Skipped={skipped}.");
+                }
                 UnityEngine.Debug.Log($"<color=#00FF00><b>[GI] Apply to Unity successful!</b></color>\nTexture built at: {targetAssetPath}\nuv2 injected into meshes.");
             }
         }
@@ -400,9 +588,10 @@ public class WishGIBakingTool : EditorWindow
     /// <summary>
     /// 导入 probe_map.npy 为 Texture2D 资产，并返回探针数量。
     /// </summary>
-    private int ImportProbeTexture(string npy, string metaStr, string assetPath)
+    private int ImportProbeTexture(string npy, string metaStr, string assetPath, out int texelsPerProbe)
     {
         var meta = JsonUtility.FromJson<ProbeMapMeta>(File.ReadAllText(metaStr));
+        texelsPerProbe = meta != null ? meta.texels_per_probe : 0;
         float[] data = ReadNpyFloat32(npy, out int[] shape);
         if (shape.Length != 3 || shape[0] != 1 || shape[1] != meta.width || shape[2] != 4)
             throw new Exception($"NPY shape mismatch: [{string.Join(",", shape)}]");
@@ -437,6 +626,77 @@ public class WishGIBakingTool : EditorWindow
         }
         AssetDatabase.Refresh();
         return meta.num_probes;
+    }
+
+    /// <summary>
+    /// 将 ProbeMap 自动绑定到场景中启用 GI 的对象实例材质。
+    /// </summary>
+    private void AssignProbeMapToGiMaterials(string probeMapAssetPath, int probeCount, int texelsPerProbe, out int boundCount, out int skippedCount)
+    {
+        boundCount = 0;
+        skippedCount = 0;
+
+        Texture2D probeTex = AssetDatabase.LoadAssetAtPath<Texture2D>(probeMapAssetPath);
+        if (probeTex == null)
+        {
+            throw new Exception($"ProbeMap asset not found: {probeMapAssetPath}");
+        }
+
+        var renderers = UnityEngine.Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (var mr in renderers)
+        {
+            if (!mr.enabled)
+            {
+                continue;
+            }
+
+            bool contributesGI = GameObjectUtility.AreStaticEditorFlagsSet(mr.gameObject, StaticEditorFlags.ContributeGI);
+            bool lightProbeOnly = mr.receiveGI == ReceiveGI.LightProbes;
+            if (!contributesGI || lightProbeOnly)
+            {
+                continue;
+            }
+
+            Material[] mats = mr.materials; // 实例材质修改
+            bool rendererChanged = false;
+            for (int i = 0; i < mats.Length; i++)
+            {
+                Material mat = mats[i];
+                if (mat == null)
+                {
+                    skippedCount++;
+                    continue;
+                }
+                if (!mat.HasProperty("_ProbeMap"))
+                {
+                    skippedCount++;
+                    continue;
+                }
+
+                mat.SetTexture("_ProbeMap", probeTex);
+                if (mat.HasProperty("_ProbeCount"))
+                {
+                    mat.SetFloat("_ProbeCount", probeCount);
+                }
+                if (mat.HasProperty("_TexelsPerProbe"))
+                {
+                    mat.SetFloat("_TexelsPerProbe", texelsPerProbe);
+                }
+                EditorUtility.SetDirty(mat);
+                boundCount++;
+                rendererChanged = true;
+            }
+
+            if (rendererChanged)
+            {
+                mr.materials = mats;
+                EditorUtility.SetDirty(mr);
+            }
+        }
+
+        var currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(currentScene);
+        AssetDatabase.SaveAssets();
     }
 
     /// <summary>
@@ -610,7 +870,7 @@ public class WishGIBakingTool : EditorWindow
     }
 
     /// <summary>
-    /// 对参数做基本合法性检查，防止明显错误输入。
+    /// 参数合法性检查
     /// </summary>
     private bool ValidateParameters(int probes, int dirs, int samples, out string error)
     {
@@ -670,7 +930,7 @@ public class WishGIBakingTool : EditorWindow
     }
 
     /// <summary>
-    /// 估算四个离线步骤耗时。采用简单经验模型并可通过历史运行进行校准。
+    /// 估算四个离线步骤耗时。采用简单经验模型，并通过历史运行进行校准。
     /// </summary>
     private TimeEstimate EstimateBakeTime(int probes, int dirs, int samples)
     {

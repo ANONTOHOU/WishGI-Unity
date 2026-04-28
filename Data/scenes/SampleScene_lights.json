@@ -45,7 +45,7 @@
             },
             "color": {
                 "r": 0.8274509906768799,
-                "g": 0.03919406235218048,
+                "g": 0.7991719245910645,
                 "b": 0.0313725508749485,
                 "a": 1.0
             },
@@ -59,15 +59,15 @@
     ],
     "meshInstances": [
         {
-            "objectName": "Bar",
-            "meshPath": "Assets/WishGI/Resources/BakedMeshes/Bar_Baked.asset",
+            "objectName": "Tree",
+            "meshPath": "Assets/WishGI/Resources/BakedMeshes/Tree_Baked.asset",
             "position": {
-                "x": 0.4300000071525574,
+                "x": -2.0899999141693117,
                 "y": 0.0,
-                "z": 0.4000000059604645
+                "z": -2.190000057220459
             },
             "eulerAngles": {
-                "x": 0.0000025044780613825425,
+                "x": 0.0,
                 "y": 0.0,
                 "z": 0.0
             },

@@ -50,10 +50,7 @@ class Vec3:
 
 	@staticmethod
 	def from_dict(d: dict) -> "Vec3":
-		"""从 Unity 风格字典读取向量。
-
-		兼容 {x,y,z} 与 {r,g,b} 两种键，减少上下游格式耦合。
-		"""
+		"""从 Unity 风格字典读取向量。"""
 		# 支持 Unity JSON 导出的 {x,y,z} 和 {r,g,b} 风格的键。
 		if "x" in d:
 			return Vec3(float(d.get("x", 0.0)), float(d.get("y", 0.0)), float(d.get("z", 0.0)))
@@ -273,7 +270,7 @@ def blue_noise_sample(tris: Sequence[Triangle], target_count: int, min_dist: flo
 	return outputs
 
 
-# ----------------------------- 光线追踪（BVH + Möller–Trumbore） -----------------------------
+# ----------------------------- 光线追踪（BVH + Moller–Trumbore） -----------------------------
 
 
 @dataclass
@@ -370,7 +367,6 @@ def bvh_intersect(node: BVHNode, tris: List[Triangle], orig, dir, t_min=1e-4, t_
 
 def bvh_first_hit(node: BVHNode, tris: List[Triangle], orig, dir, t_min=1e-4, t_max=1e9) -> Optional[Tuple[float, int]]:
 	"""返回最近命中点的 (t, tri_index)，若无命中则返回 None。"""
-	# 返回最近命中点的 (t, tri_index)，若无命中则返回 None。
 	if not ray_aabb_intersect(orig, dir, node.bounds_min, node.bounds_max):
 		return None
 	if node.left is None and node.right is None:
@@ -398,7 +394,6 @@ def bvh_first_hit(node: BVHNode, tris: List[Triangle], orig, dir, t_min=1e-4, t_
 
 def cosine_hemisphere_samples(num_dirs: int) -> np.ndarray:
 	"""生成一组余弦加权半球方向，用于离线多方向采样。"""
-	# 使用同心映射的分层余弦加权采样
 	out = []
 	m = int(math.sqrt(num_dirs))
 	if m * m < num_dirs:
@@ -430,7 +425,6 @@ def cosine_hemisphere_samples(num_dirs: int) -> np.ndarray:
 
 def sample_cosine_hemisphere() -> np.ndarray:
 	"""随机生成单个余弦加权半球方向。"""
-	# 在半球上生成单个随机余弦加权样本
 	u1 = random.random()
 	u2 = random.random()
 	r = math.sqrt(u1)
@@ -563,7 +557,7 @@ def path_trace(
 	tex_cache: Dict[str, np.ndarray] | None = None,
 	stats: Dict[str, int] | None = None,
 ) -> np.ndarray:
-	"""简化路径追踪器，使用按面材质+纹理采样的反射率推进多次反弹。"""
+	# 简化路径追踪器，使用按面材质+纹理采样的反射率推进多次反弹。
 	if default_albedo_rgb is None:
 		default_albedo_rgb = np.array([0.8, 0.8, 0.8], dtype=np.float32)
 	if tex_cache is None:
@@ -653,8 +647,7 @@ def compute_direct_lighting(sample: Sample, lights: List[Light], bvh: BVHNode, t
 
 
 def direct_radiance(pos: np.ndarray, normal: np.ndarray, lights: List[Light], bvh: BVHNode, tris: List[Triangle]) -> np.ndarray:
-	"""估计一个表面点的直接光辐亮度（RGB）。"""
-	# 返回表面点的 RGB 直接光照（兰伯特，无纹理），并进行阴影检查。
+	"""估计一个表面点的直接光辐亮度（RGB）。返回表面点的 RGB 直接光照（兰伯特，无纹理），并进行阴影检查。"""
 	n = normal
 	radiance = np.zeros(3, dtype=np.float32)
 	for l in lights:
@@ -686,7 +679,6 @@ def direct_radiance(pos: np.ndarray, normal: np.ndarray, lights: List[Light], bv
 
 def run_sampling(mesh_json: str, scene_json: str, output_path: str, min_dist: float, num_samples: int, num_dirs: int, max_bounces: int, default_albedo: float, seed: int, dirs_out: str | None):
 	"""执行离线采样主流程：采样点生成、路径追踪、写出 JSON。"""
-	# 固定种子，以便在 SH 拟合中采样、方向和路径追踪可重复
 	random.seed(seed)
 	np.random.seed(seed)
 	print(f"[GI] Loading mesh from {mesh_json}")
